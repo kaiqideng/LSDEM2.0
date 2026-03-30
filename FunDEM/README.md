@@ -1,11 +1,14 @@
 run FunDEM
 
 env:
+CUDA
 sudo apt-get install -y build-essential cmake ninja-build git
 sudo apt-get install -y pkg-config
 (no CUDA? sudo apt install -y nvidia-cuda-toolkit)
 
-create your own code in FunDEM/apps
+read tutorials in FunDEM/apps/tutorial
+
+create your own code in FunDEM/apps 
 
 build:
 cmake -S FunDEM -B build -G Ninja \
