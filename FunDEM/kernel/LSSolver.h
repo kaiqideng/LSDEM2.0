@@ -153,7 +153,6 @@ public:
         }
         iFrame++;
         output(dir, iFrame, iStep, time);
-        download();
         std::cout << "Simulation Completed" << std::endl;
     }
 
@@ -183,9 +182,11 @@ private:
     void removeFiles(const std::string dir)
     {
         const std::string dir1 = dir + "/Particle";
-        const std::string dir2 = dir + "/Wall";
-        const std::string dir3 = dir + "/ParticleInteraction";
+        const std::string dir2 = dir + "/ParticleInteraction";
+        const std::string dir3 = dir + "/Wall";
         const std::string dir4 = dir + "/Particle-WallInteraction";
+
+        MKDIR(dir.c_str());
 
         removeVtuFiles(dir1);
         removeVtuFiles(dir2);
@@ -532,11 +533,25 @@ private:
         integration2ndHalf(gravity, halfTimeStep);
     }
 
+    void download()
+    {
+        LSParticle_.finalize(stream_);
+        LSParticleInteraction_.finalize(stream_);
+        if (fixedLSParticle_.num() > 0)
+        {
+            fixedLSParticle_.finalize(stream_);
+            fixedLSParticleInteraction_.finalize(stream_);
+        }
+        if (BondedParticleInteraction_.numPair() > 0) BondedParticleInteraction_.finalize(stream_);
+    }
+
     void output(const std::string &dir, const size_t iFrame, const size_t iStep, const double time)
     {
+        download();
+
         const std::string dir1 = dir + "/Particle";
-        const std::string dir2 = dir + "/Wall";
-        const std::string dir3 = dir + "/ParticleInteraction";
+        const std::string dir2 = dir + "/ParticleInteraction";
+        const std::string dir3 = dir + "/Wall";
         const std::string dir4 = dir + "/Particle-WallInteraction";
 
         MKDIR(dir.c_str());
@@ -548,13 +563,13 @@ private:
         LSParticle_.shearStiffnessHostRef(),
         LSParticle_.normalStiffnessHostRef(),
         LSParticle_.shearStiffnessHostRef(),
-        dir3, iFrame, iStep, time);
+        dir2, iFrame, iStep, time);
 
-        if (BondedParticleInteraction_.numPair() > 0) BondedParticleInteraction_.outputVTU(dir3, iFrame, iStep, time);
+        if (BondedParticleInteraction_.numPair() > 0) BondedParticleInteraction_.outputVTU(dir2, iFrame, iStep, time);
 
         if (fixedLSParticle_.num() > 0)
         {
-            fixedLSParticle_.outputVTU(dir2, iFrame, iStep, time);
+            fixedLSParticle_.outputVTU(dir3, iFrame, iStep, time);
 
             fixedLSParticleInteraction_.outputVTU(LSParticle_.LSBoundaryNode_.particleIDHostRef(), 
             LSParticle_.normalStiffnessHostRef(),
@@ -563,15 +578,6 @@ private:
             fixedLSParticle_.shearStiffnessHostRef(),
             dir4, iFrame, iStep, time);
         }
-    }
-
-    void download()
-    {
-        LSParticle_.finalize(stream_);
-        fixedLSParticle_.finalize(stream_);
-        LSParticleInteraction_.finalize(stream_);
-        fixedLSParticleInteraction_.finalize(stream_);
-        BondedParticleInteraction_.finalize(stream_);
     }
 
 private:

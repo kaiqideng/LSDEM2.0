@@ -96,12 +96,12 @@ public:
 
         const size_t N = numPair_;
 
-        std::vector<int> pairMasterBoundaryID = masterBoundaryNodeID_.getHostCopy();
-        std::vector<int> pairSlaveParticleID = slaveParticleID_.getHostCopy();
-        std::vector<double3> p = contactPoint_.getHostCopy();
-        std::vector<double> o = contactOverlap_.getHostCopy();
-        std::vector<double3> n = contactNormal_.getHostCopy();
-        std::vector<double3> s = slidingSpring_.getHostCopy();
+        std::vector<int> pairMasterBoundaryID = masterBoundaryNodeID_.hostRef();
+        std::vector<int> pairSlaveParticleID = slaveParticleID_.hostRef();
+        std::vector<double3> p = contactPoint_.hostRef();
+        std::vector<double> o = contactOverlap_.hostRef();
+        std::vector<double3> n = contactNormal_.hostRef();
+        std::vector<double3> s = slidingSpring_.hostRef();
 
         pairMasterBoundaryID.resize(N);
         pairSlaveParticleID.resize(N);
@@ -547,21 +547,21 @@ public:
             << std::setw(4) << std::setfill('0') << iFrame
             << ".vtu";
 
-        const std::vector<int> isBonded = isBondedHostCopy();
-        const std::vector<double3> bondPoint = pointHostCopy();
-        const std::vector<double3> bondNormal = normalHostCopy();
+        const std::vector<int> isBonded = isBonded_.hostRef();
+        const std::vector<double3> bondPoint = point_.hostRef();
+        const std::vector<double3> bondNormal = normal_.hostRef();
 
-        const std::vector<double> normalForce = normalForceHostCopy();
-        const std::vector<double> torsionTorque = torsionTorqueHostCopy();
-        const std::vector<double3> shearForce = shearForceHostCopy();
-        const std::vector<double3> bendingTorque = bendingTorqueHostCopy();
-        const std::vector<double> maxNormalStress = maxNormalStressHostCopy();
-        const std::vector<double> maxShearStress = maxShearStressHostCopy();
+        const std::vector<double> normalForce = normalForce_.hostRef();
+        const std::vector<double> torsionTorque = torsionTorque_.hostRef();
+        const std::vector<double3> shearForce = shearForce_.hostRef();
+        const std::vector<double3> bendingTorque = bendingTorque_.hostRef();
+        const std::vector<double> maxNormalStress = maxNormalStress_.hostRef();
+        const std::vector<double> maxShearStress = maxShearStress_.hostRef();
 
-        const std::vector<double> normalStiffness = normalStiffnessHostRef();
-        const std::vector<double> shearStiffness = shearStiffnessHostRef();
-        const std::vector<double> bendingStiffness = bendingStiffnessHostRef();
-        const std::vector<double> torsionStiffness = torsionStiffnessHostRef();
+        const std::vector<double> normalStiffness = normalStiffness_.hostRef();
+        const std::vector<double> torsionStiffness = torsionStiffness_.hostRef();
+        const std::vector<double> shearStiffness = shearStiffness_.hostRef();
+        const std::vector<double> bendingStiffness = bendingStiffness_.hostRef();
 
         const size_t N = bondPoint.size();
 

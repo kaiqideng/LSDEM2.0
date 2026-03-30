@@ -324,10 +324,10 @@ public:
         const std::vector<int> &pID = LSBoundaryNode_.particleIDHostRef();
         const std::vector<double3> &pLocal = LSBoundaryNode_.localPositionHostRef();
 
-        const std::vector<double3> p_p = position_.getHostCopy();
-        const std::vector<double3> v_p = velocity_.getHostCopy();
-        const std::vector<double3> w_p = angularVelocity_.getHostCopy();
-        const std::vector<quaternion> q_p = orientation_.getHostCopy();
+        const std::vector<double3> &p_p = position_.hostRef();
+        const std::vector<double3> &v_p = velocity_.hostRef();
+        const std::vector<double3> &w_p = angularVelocity_.hostRef();
+        const std::vector<quaternion> &q_p = orientation_.hostRef();
 
         std::vector<float> points;
         std::vector<float> vel;
