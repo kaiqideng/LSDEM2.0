@@ -1,0 +1,586 @@
+#include "LSInteraction.h"
+#include "CUDAKernelFunction/LSParticleContactDetectionKernel.cuh"
+#include "CUDAKernelFunction/contactKernel.cuh"
+#include "CUDAKernelFunction/particleIntegrationKernel.cuh"
+
+class LSSolver
+{
+public:
+    LSSolver(cudaStream_t stream, const size_t deviceID = 0, const size_t maxGPUThread = 256)
+    {
+        stream_ = stream;
+        deviceID_ = deviceID;
+        maxGPUThread_ = maxGPUThread;
+    }
+
+    ~LSSolver() = default;
+
+    void addLSParticle(const std::vector<double3>& boundaryNodeLocalPosition,
+    const std::vector<double>& gridNodeLevelSetFunctionValue,
+    const double3 gridNodeLocalOrigin,
+    const int3 gridNodeSize,
+    const double gridNodeSpacing,
+    const double3 position,
+    const double3 velocity,
+    const double3 angularvelocity,
+    const quaternion orientation,
+    const double normalStiffness,
+    const double shearStiffness,
+    const double frictionCoefficient,
+    const double density)
+    {
+        LSParticle_.add(boundaryNodeLocalPosition, 
+        gridNodeLevelSetFunctionValue, 
+        gridNodeLocalOrigin, 
+        gridNodeSize, 
+        gridNodeSpacing, 
+        position, 
+        velocity, 
+        angularvelocity, 
+        orientation, 
+        normalStiffness,
+        shearStiffness,
+        frictionCoefficient, 
+        density, 
+        stream_);
+    }
+
+    void addWall(const std::vector<double3>& boundaryNodeLocalPosition,
+    const std::vector<double>& gridNodeLevelSetFunctionValue,
+    const double3 gridNodeLocalOrigin,
+    const int3 gridNodeSize,
+    const double gridNodeSpacing,
+    const double3 position,
+    const quaternion orientation,
+    const double normalStiffness,
+    const double shearStiffness,
+    const double frictionCoefficient)
+    {
+        fixedLSParticle_.add(boundaryNodeLocalPosition, 
+        gridNodeLevelSetFunctionValue, 
+        gridNodeLocalOrigin, 
+        gridNodeSize, 
+        gridNodeSpacing, 
+        position, 
+        make_double3(0., 0., 0.), 
+        make_double3(0., 0., 0.), 
+        orientation, 
+        normalStiffness,
+        shearStiffness,
+        frictionCoefficient, 
+        0., 
+        stream_);
+    }
+
+    void moveLSParticle(const size_t index, const double3 offSet) 
+    { 
+        LSParticle_.move(index, offSet, stream_); 
+    }
+
+    void moveWall(const size_t index, const double3 offSet) 
+    { 
+        fixedLSParticle_.move(index, offSet, stream_); 
+    }
+
+    void setFixedVelocityToWall(const size_t index, const double3 velocity)
+    {
+        fixedLSParticle_.setVelocity(index, velocity, stream_);
+    }
+
+    void setFixedAngularVelocityToWall(const size_t index, const double3 angularVelocity)
+    {
+        fixedLSParticle_.setAngularVelocity(index, angularVelocity, stream_);
+    }
+
+    void addBondedParticleInteraction(const double YoungsModulus, 
+    const double poissonRatio, 
+    const double radius, 
+    const double tensileStrength = 0., 
+    const double cohesion= 0., 
+    const double frictionCoefficient= 0.)
+    {
+        BondedParticleInteraction_.addLSBond(LSParticle_, 
+        LSParticleInteraction_, 
+        YoungsModulus, 
+        poissonRatio, 
+        radius, 
+        tensileStrength, 
+        cohesion, 
+        frictionCoefficient, 
+        maxGPUThread_, 
+        stream_);
+    }
+
+    void solve(const double3 minDomain, 
+    const double3 maxDomain, 
+    const double3 gravity, 
+    const double timeStep, 
+    const double maximumTime,
+    const size_t numFrame,
+    const std::string dir, 
+    const size_t updateSpatialGridGap = 5)
+    {
+        std::cout << "Checking input..." << std::endl;
+        const double3 domainSize = maxDomain - minDomain;
+        if (domainSize.x <= 0. || domainSize.y <= 0. || domainSize.z <= 0. ) return;
+        if (timeStep <= 0. || maximumTime <= 0.) return;
+
+        removeFiles(dir);
+        activateGPUDevice();
+        upload(minDomain, maxDomain);
+        updateSpatialGrid();
+        buildLSParticleInteraction();
+        std::cout << "Initialization Completed" << std::endl;
+
+        const size_t numStep = size_t(maximumTime / timeStep) + 1;
+        size_t frameInterval = numStep;
+        if (numFrame > 0) frameInterval = numStep / numFrame;
+        if (frameInterval < 1) frameInterval = 1;
+        size_t iStep = 0, iFrame = 0;
+        double time = 0.;
+        const double halfTimeStep = 0.5 * timeStep;
+        output(dir, iFrame, iStep, time);
+        while (iStep <= numStep)
+        {
+            simulateOneStep(iStep, time, gravity, halfTimeStep, updateSpatialGridGap);
+            if (iStep % frameInterval == 0)
+            {
+                iFrame++;
+                std::cout << "Frame " << iFrame << " at Time " << time << std::endl;
+                output(dir, iFrame, iStep, time);
+            }
+        }
+        iFrame++;
+        output(dir, iFrame, iStep, time);
+        download();
+        std::cout << "Simulation Completed" << std::endl;
+    }
+
+    void copyFromHost(const LSSolver& other)
+    {
+        LSParticle_.copyFromHost(other.LSParticle_);
+        fixedLSParticle_.copyFromHost(other.fixedLSParticle_);
+        LSParticleInteraction_.copyFromHost(other.LSParticleInteraction_);
+        fixedLSParticleInteraction_.copyFromHost(other.fixedLSParticleInteraction_);
+        BondedParticleInteraction_.copyFromHost(other.BondedParticleInteraction_);
+
+        stream_ = other.stream_;
+        maxGPUThread_ = other.maxGPUThread_;
+        deviceID_ = other.deviceID_;
+    }
+
+protected:
+    virtual void addExternalForceTorque(const double time) {}
+
+    LSParticle& getLSParticle() { return LSParticle_; }
+
+    LSParticleInteraction& getLSParticleInteraction() { return LSParticleInteraction_; }
+
+    BondedParticleInteraction& getBondedParticleInteraction() { return BondedParticleInteraction_; }
+
+private:
+    void removeFiles(const std::string dir)
+    {
+        const std::string dir1 = dir + "/Particle";
+        const std::string dir2 = dir + "/Wall";
+        const std::string dir3 = dir + "/ParticleInteraction";
+        const std::string dir4 = dir + "/Particle-WallInteraction";
+
+        removeVtuFiles(dir1);
+        removeVtuFiles(dir2);
+        removeVtuFiles(dir3);
+        removeVtuFiles(dir4);
+    }
+
+    void activateGPUDevice()
+    {
+        cudaError_t cudaStatus = cudaSetDevice(deviceID_);
+        if (cudaStatus != cudaSuccess) 
+        {
+            std::cout << "cudaSetDevice( " << deviceID_
+            << " ) failed! Do you have a CUDA-capable GPU installed?"
+            << std::endl;
+            exit(1);
+        }
+    }
+
+    void upload(const double3 minDomain, const double3 maxDomain)
+    {
+        LSParticle_.initialize(minDomain, 
+        maxDomain, 
+        maxGPUThread_, 
+        stream_);
+
+        fixedLSParticle_.initialize(minDomain, 
+        maxDomain, 
+        maxGPUThread_, 
+        stream_);
+
+        LSParticleInteraction_.initialize(LSParticle_, 
+        maxGPUThread_, 
+        stream_);
+
+        fixedLSParticleInteraction_.initialize(LSParticle_, 
+        maxGPUThread_, 
+        stream_);
+
+        BondedParticleInteraction_.initialize(maxGPUThread_, 
+        stream_);
+    }
+
+    void updateSpatialGrid()
+    {
+        launchUpdateSpatialGridHashStartEnd(LSParticle_.position(), 
+        LSParticle_.hashIndex(), 
+        LSParticle_.hashValue(), 
+        LSParticle_.spatialGrid_.hashStart(), 
+        LSParticle_.spatialGrid_.hashEnd(), 
+        LSParticle_.spatialGrid_.minimumBoundary(), 
+        LSParticle_.spatialGrid_.maximumBoundary(), 
+        LSParticle_.spatialGrid_.inverseCellSize(), 
+        LSParticle_.spatialGrid_.size3D(), 
+        LSParticle_.spatialGrid_.num_device(), 
+        LSParticle_.num_device(), 
+        LSParticle_.gridDim(), 
+        LSParticle_.blockDim(), 
+        stream_);
+
+        launchUpdateSpatialGridHashStartEnd(fixedLSParticle_.position(), 
+        fixedLSParticle_.hashIndex(), 
+        fixedLSParticle_.hashValue(), 
+        fixedLSParticle_.spatialGrid_.hashStart(), 
+        fixedLSParticle_.spatialGrid_.hashEnd(), 
+        fixedLSParticle_.spatialGrid_.minimumBoundary(), 
+        fixedLSParticle_.spatialGrid_.maximumBoundary(), 
+        fixedLSParticle_.spatialGrid_.inverseCellSize(), 
+        fixedLSParticle_.spatialGrid_.size3D(), 
+        fixedLSParticle_.spatialGrid_.num_device(), 
+        fixedLSParticle_.num_device(), 
+        fixedLSParticle_.gridDim(), 
+        fixedLSParticle_.blockDim(), 
+        stream_);
+    }
+
+    void buildLSParticleInteraction()
+    {
+        launchBuildLevelSetBoundaryNodeInteractions1st(LSParticle_.LSBoundaryNode_.localPosition(), 
+        LSParticle_.LSBoundaryNode_.particleID(), 
+        LSParticleInteraction_.boundaryNodeNeighborCount(),
+        LSParticle_.LSGridNode_.levelSetFunctionValue(), 
+        LSParticle_.position(), 
+        LSParticle_.orientation(), 
+        LSParticle_.radius(), 
+        LSParticle_.inverseGridNodeSpacing(), 
+        LSParticle_.gridNodeLocalOrigin(), 
+        LSParticle_.gridNodeSize(), 
+        LSParticle_.gridNodePrefixSum(), 
+        LSParticle_.hashIndex(),
+        LSParticle_.spatialGrid_.hashStart(), 
+        LSParticle_.spatialGrid_.hashEnd(), 
+        LSParticle_.spatialGrid_.minimumBoundary(), 
+        LSParticle_.spatialGrid_.inverseCellSize(), 
+        LSParticle_.spatialGrid_.size3D(), 
+        LSParticleInteraction_.numBoundaryNode_device(), 
+        LSParticleInteraction_.boundaryNodeGridDim(), 
+        LSParticleInteraction_.boundaryNodeBlockDim(), 
+        stream_);
+
+        LSParticleInteraction_.save(maxGPUThread_, stream_);
+
+        launchBuildLevelSetBoundaryNodeInteractions2nd(LSParticleInteraction_.slidingSpring(), 
+        LSParticleInteraction_.contactPoint(), 
+        LSParticleInteraction_.contactNormal(), 
+        LSParticleInteraction_.contactOverlap(), 
+        LSParticleInteraction_.masterBoundaryNodeID(), 
+        LSParticleInteraction_.slaveParticleID(), 
+        LSParticleInteraction_.previousSlidingSpring(), 
+        LSParticleInteraction_.previousSlaveParticleID(), 
+        LSParticle_.LSBoundaryNode_.localPosition(), 
+        LSParticle_.LSBoundaryNode_.particleID(), 
+        LSParticleInteraction_.boundaryNodeNeighborPrefixSum(), 
+        LSParticleInteraction_.previousBundaryNodeNeighborPrefixSum(), 
+        LSParticle_.LSGridNode_.levelSetFunctionValue(), 
+        LSParticle_.position(), 
+        LSParticle_.orientation(), 
+        LSParticle_.radius(), 
+        LSParticle_.inverseGridNodeSpacing(), 
+        LSParticle_.gridNodeLocalOrigin(), 
+        LSParticle_.gridNodeSize(), 
+        LSParticle_.gridNodePrefixSum(), 
+        LSParticle_.hashIndex(),
+        LSParticle_.spatialGrid_.hashStart(), 
+        LSParticle_.spatialGrid_.hashEnd(), 
+        LSParticle_.spatialGrid_.minimumBoundary(), 
+        LSParticle_.spatialGrid_.inverseCellSize(), 
+        LSParticle_.spatialGrid_.size3D(), 
+        LSParticleInteraction_.numBoundaryNode_device(), 
+        LSParticleInteraction_.boundaryNodeGridDim(), 
+        LSParticleInteraction_.boundaryNodeBlockDim(), 
+        stream_);
+
+        launchBuildLevelSetBoundaryNodeFixedParticleInteractions1st(LSParticle_.LSBoundaryNode_.localPosition(), 
+        LSParticle_.LSBoundaryNode_.particleID(), 
+        fixedLSParticleInteraction_.boundaryNodeNeighborCount(), 
+        fixedLSParticle_.LSGridNode_.levelSetFunctionValue(), 
+        LSParticle_.position(), 
+        LSParticle_.orientation(), 
+        fixedLSParticle_.position(), 
+        fixedLSParticle_.orientation(), 
+        fixedLSParticle_.inverseGridNodeSpacing(), 
+        fixedLSParticle_.gridNodeLocalOrigin(), 
+        fixedLSParticle_.gridNodeSize(), 
+        fixedLSParticle_.gridNodePrefixSum(), 
+        fixedLSParticle_.hashIndex(),
+        fixedLSParticle_.spatialGrid_.hashStart(), 
+        fixedLSParticle_.spatialGrid_.hashEnd(), 
+        fixedLSParticle_.spatialGrid_.minimumBoundary(), 
+        fixedLSParticle_.spatialGrid_.inverseCellSize(), 
+        fixedLSParticle_.spatialGrid_.size3D(), 
+        fixedLSParticleInteraction_.numBoundaryNode_device(), 
+        fixedLSParticleInteraction_.boundaryNodeGridDim(), 
+        fixedLSParticleInteraction_.boundaryNodeBlockDim(), 
+        stream_);
+
+        fixedLSParticleInteraction_.save(maxGPUThread_, stream_);
+
+        launchBuildLevelSetBoundaryNodeFixedParticleInteractions2nd(fixedLSParticleInteraction_.slidingSpring(), 
+        fixedLSParticleInteraction_.contactPoint(), 
+        fixedLSParticleInteraction_.contactNormal(), 
+        fixedLSParticleInteraction_.contactOverlap(), 
+        fixedLSParticleInteraction_.masterBoundaryNodeID(), 
+        fixedLSParticleInteraction_.slaveParticleID(), 
+        fixedLSParticleInteraction_.previousSlidingSpring(), 
+        fixedLSParticleInteraction_.previousSlaveParticleID(), 
+        LSParticle_.LSBoundaryNode_.localPosition(), 
+        LSParticle_.LSBoundaryNode_.particleID(), 
+        fixedLSParticleInteraction_.boundaryNodeNeighborPrefixSum(), 
+        fixedLSParticleInteraction_.previousBundaryNodeNeighborPrefixSum(), 
+        fixedLSParticle_.LSGridNode_.levelSetFunctionValue(), 
+        LSParticle_.position(), 
+        LSParticle_.orientation(), 
+        fixedLSParticle_.position(), 
+        fixedLSParticle_.orientation(), 
+        fixedLSParticle_.inverseGridNodeSpacing(), 
+        fixedLSParticle_.gridNodeLocalOrigin(), 
+        fixedLSParticle_.gridNodeSize(), 
+        fixedLSParticle_.gridNodePrefixSum(), 
+        fixedLSParticle_.hashIndex(),
+        fixedLSParticle_.spatialGrid_.hashStart(), 
+        fixedLSParticle_.spatialGrid_.hashEnd(), 
+        fixedLSParticle_.spatialGrid_.minimumBoundary(), 
+        fixedLSParticle_.spatialGrid_.inverseCellSize(), 
+        fixedLSParticle_.spatialGrid_.size3D(), 
+        fixedLSParticleInteraction_.numBoundaryNode_device(), 
+        fixedLSParticleInteraction_.boundaryNodeGridDim(), 
+        fixedLSParticleInteraction_.boundaryNodeBlockDim(), 
+        stream_);
+    }
+
+    void calLSParticleContactForceTorque(const double timeStep)
+    {
+        cudaMemsetAsync(LSParticle_.force(), 0, LSParticle_.num_device() * sizeof(double3), stream_);
+        cudaMemsetAsync(LSParticle_.torque(), 0, LSParticle_.num_device() * sizeof(double3), stream_);
+
+        launchAddLevelSetParticleContactForceTorque(LSParticleInteraction_.slidingSpring(), 
+        LSParticleInteraction_.contactPoint(),
+        LSParticleInteraction_.contactNormal(), 
+        LSParticleInteraction_.contactOverlap(),
+        LSParticleInteraction_.masterBoundaryNodeID(), 
+        LSParticleInteraction_.slaveParticleID(), 
+        LSParticle_.LSBoundaryNode_.localPosition(),
+        LSParticle_.LSBoundaryNode_.particleID(), 
+        LSParticle_.force(), 
+        LSParticle_.torque(), 
+        LSParticle_.position(),
+        LSParticle_.velocity(),
+        LSParticle_.angularVelocity(),
+        LSParticle_.normalStiffness(),
+        LSParticle_.shearStiffness(),
+        LSParticle_.frictionCoefficient(),
+        timeStep, 
+        LSParticleInteraction_.numPair_device(), 
+        LSParticleInteraction_.pairGridDim(), 
+        LSParticleInteraction_.pairBlockDim(), 
+        stream_);
+
+        launchAddFixedLevelSetParticleContactForceTorque(fixedLSParticleInteraction_.slidingSpring(), 
+        fixedLSParticleInteraction_.contactPoint(),
+        fixedLSParticleInteraction_.contactNormal(), 
+        fixedLSParticleInteraction_.contactOverlap(),
+        fixedLSParticleInteraction_.masterBoundaryNodeID(),
+        fixedLSParticleInteraction_.slaveParticleID(), 
+        LSParticle_.LSBoundaryNode_.localPosition(),
+        LSParticle_.LSBoundaryNode_.particleID(), 
+        LSParticle_.force(), 
+        LSParticle_.torque(), 
+        LSParticle_.position(),
+        LSParticle_.velocity(),
+        LSParticle_.angularVelocity(),
+        LSParticle_.normalStiffness(),
+        LSParticle_.shearStiffness(),
+        LSParticle_.frictionCoefficient(),
+        fixedLSParticle_.position(),
+        fixedLSParticle_.velocity(),
+        fixedLSParticle_.angularVelocity(),
+        fixedLSParticle_.normalStiffness(),
+        fixedLSParticle_.shearStiffness(),
+        fixedLSParticle_.frictionCoefficient(),
+        timeStep, 
+        fixedLSParticleInteraction_.numPair_device(), 
+        fixedLSParticleInteraction_.pairGridDim(), 
+        fixedLSParticleInteraction_.pairBlockDim(), 
+        stream_);
+
+        launchAddLevelSetParticleBondedForceTorqueKernel(BondedParticleInteraction_.point(), 
+        BondedParticleInteraction_.normal(), 
+        BondedParticleInteraction_.shearForce(), 
+        BondedParticleInteraction_.bendingTorque(), 
+        BondedParticleInteraction_.normalForce(), 
+        BondedParticleInteraction_.torsionTorque(), 
+        BondedParticleInteraction_.maxNormalStress(), 
+        BondedParticleInteraction_.maxShearStress(), 
+        BondedParticleInteraction_.isBonded(), 
+        BondedParticleInteraction_.normalStiffness(), 
+        BondedParticleInteraction_.torsionStiffness(), 
+        BondedParticleInteraction_.shearStiffness(), 
+        BondedParticleInteraction_.bendingStiffness(), 
+        BondedParticleInteraction_.radius(), 
+        BondedParticleInteraction_.tensileStrength(), 
+        BondedParticleInteraction_.cohesion(), 
+        BondedParticleInteraction_.frictionCoefficient(), 
+        BondedParticleInteraction_.endPointALocalPosition(), 
+        BondedParticleInteraction_.endPointBLocalPosition(), 
+        BondedParticleInteraction_.masterParticleID(), 
+        BondedParticleInteraction_.slaveParticleID(), 
+        LSParticle_.force(), 
+        LSParticle_.torque(), 
+        LSParticle_.position(), 
+        LSParticle_.velocity(), 
+        LSParticle_.angularVelocity(), 
+        LSParticle_.orientation(), 
+        timeStep, 
+        BondedParticleInteraction_.numPair_device(), 
+        BondedParticleInteraction_.gridDim(), 
+        BondedParticleInteraction_.blockDim(), 
+        stream_);
+    }
+
+    void integration1stHalf(const double3 gravity, const double halfTimeStep)
+    {
+        launchParticle1stHalfIntegration(LSParticle_.position(),
+        LSParticle_.velocity(),
+        LSParticle_.angularVelocity(),
+        LSParticle_.force(), 
+        LSParticle_.torque(), 
+        LSParticle_.inverseMass(), 
+        LSParticle_.orientation(), 
+        LSParticle_.inverseInertiaTensor(), 
+        gravity, 
+        halfTimeStep, 
+        LSParticle_.num_device(), 
+        LSParticle_.gridDim(), 
+        LSParticle_.blockDim(),
+        stream_);
+
+        launchParticle1stHalfIntegration(fixedLSParticle_.position(),
+        fixedLSParticle_.velocity(),
+        fixedLSParticle_.angularVelocity(),
+        fixedLSParticle_.force(), 
+        fixedLSParticle_.torque(), 
+        fixedLSParticle_.inverseMass(), 
+        fixedLSParticle_.orientation(), 
+        fixedLSParticle_.inverseInertiaTensor(), 
+        gravity, 
+        halfTimeStep, 
+        fixedLSParticle_.num_device(), 
+        fixedLSParticle_.gridDim(), 
+        fixedLSParticle_.blockDim(),
+        stream_);
+    }
+
+    void integration2ndHalf(const double3 gravity, const double halfTimeStep)
+    {
+        launchParticle2ndHalfIntegration(LSParticle_.velocity(),
+        LSParticle_.angularVelocity(),
+        LSParticle_.force(), 
+        LSParticle_.torque(), 
+        LSParticle_.inverseMass(), 
+        LSParticle_.orientation(), 
+        LSParticle_.inverseInertiaTensor(), 
+        gravity, 
+        halfTimeStep, 
+        LSParticle_.num_device(), 
+        LSParticle_.gridDim(), 
+        LSParticle_.blockDim(),
+        stream_);
+    }
+
+    void simulateOneStep(size_t& iStep, double& time, const double3 gravity, const double halfTimeStep, const size_t updateSpatialGridGap)
+    {
+        iStep += 1;
+        if (iStep % updateSpatialGridGap == 0) updateSpatialGrid();
+        buildLSParticleInteraction();
+        calLSParticleContactForceTorque(halfTimeStep);
+        time += halfTimeStep;
+        addExternalForceTorque(time);
+        integration1stHalf(gravity, halfTimeStep);
+        buildLSParticleInteraction();
+        calLSParticleContactForceTorque(halfTimeStep);
+        time += halfTimeStep;
+        addExternalForceTorque(time);
+        integration2ndHalf(gravity, halfTimeStep);
+    }
+
+    void output(const std::string &dir, const size_t iFrame, const size_t iStep, const double time)
+    {
+        const std::string dir1 = dir + "/Particle";
+        const std::string dir2 = dir + "/Wall";
+        const std::string dir3 = dir + "/ParticleInteraction";
+        const std::string dir4 = dir + "/Particle-WallInteraction";
+
+        MKDIR(dir.c_str());
+
+        LSParticle_.outputVTU(dir1, iFrame, iStep, time);
+
+        LSParticleInteraction_.outputVTU(LSParticle_.LSBoundaryNode_.particleIDHostRef(), 
+        LSParticle_.normalStiffnessHostRef(),
+        LSParticle_.shearStiffnessHostRef(),
+        LSParticle_.normalStiffnessHostRef(),
+        LSParticle_.shearStiffnessHostRef(),
+        dir3, iFrame, iStep, time);
+
+        if (BondedParticleInteraction_.numPair() > 0) BondedParticleInteraction_.outputVTU(dir3, iFrame, iStep, time);
+
+        if (fixedLSParticle_.num() > 0)
+        {
+            fixedLSParticle_.outputVTU(dir2, iFrame, iStep, time);
+
+            fixedLSParticleInteraction_.outputVTU(LSParticle_.LSBoundaryNode_.particleIDHostRef(), 
+            LSParticle_.normalStiffnessHostRef(),
+            LSParticle_.shearStiffnessHostRef(),
+            fixedLSParticle_.normalStiffnessHostRef(),
+            fixedLSParticle_.shearStiffnessHostRef(),
+            dir4, iFrame, iStep, time);
+        }
+    }
+
+    void download()
+    {
+        LSParticle_.finalize(stream_);
+        fixedLSParticle_.finalize(stream_);
+        LSParticleInteraction_.finalize(stream_);
+        fixedLSParticleInteraction_.finalize(stream_);
+        BondedParticleInteraction_.finalize(stream_);
+    }
+
+private:
+    LSParticle LSParticle_;
+    LSParticle fixedLSParticle_;
+    LSParticleInteraction LSParticleInteraction_;
+    LSParticleInteraction fixedLSParticleInteraction_;
+    BondedParticleInteraction BondedParticleInteraction_;
+
+    cudaStream_t stream_;
+    size_t deviceID_;
+    size_t maxGPUThread_;
+};
