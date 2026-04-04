@@ -1,7 +1,34 @@
 #include "kernel/LSSolver.h"
-#include "kernel/LSParticleGenerator.h"
-#include "kernel/spherePackGenerator.h"
+#include "kernel/helper/LevelSetObjectGenerator.h"
+#include "kernel/helper/SpherePackingGenerator.h"
 #include "globalDamping.cuh"
+
+inline int rand_deterministic(int min, int max)
+{
+    if (max <= min) return min;
+    static std::mt19937 rng(123456); // fixed seed
+    std::uniform_int_distribution<int> dist(min, max);
+    return dist(rng);
+}
+
+inline quaternion randomQuaternionUniform_deterministic()
+{
+    static std::mt19937 rng(123456);
+    std::uniform_real_distribution<double> U(0.0, 1.0);
+
+    const double u1 = U(rng), u2 = U(rng), u3 = U(rng);
+    const double s1 = std::sqrt(1.0 - u1);
+    const double s2 = std::sqrt(u1);
+    const double a = 2.0 * M_PI * u2;
+    const double b = 2.0 * M_PI * u3;
+
+    return quaternion{
+        s2 * std::cos(b),
+        s1 * std::sin(a),
+        s1 * std::cos(a),
+        s2 * std::sin(b)
+    };
+}
 
 struct SuperellipsoidParams 
 {
@@ -34,24 +61,25 @@ public:
     }
 };
 
-int main()
+int main(const int argc, char** argv)
 {
     solver solver_;
 
     const double l = 1.;
+    
     const double rMin = 0.1;
     const double rMax = 0.3;
     const double density = 1000.;
     const int nSpheres_max = 3000;
 
-    SpherePack SpherePack_ = generateNonOverlappingSpheresInCylinder_LargeFirst(make_double3(- l, 0, 0.), 
+    SpherePacking::Pack Pack_ = SpherePacking::buildNonOverlappingInCylinder_LargeFirst(make_double3(- l, 0, 0.), 
     make_double3(l, 0., 0.), 
     2 * l, 
     nSpheres_max, 
     rMin, 
     rMax);
 
-    for (size_t i = 0; i < SpherePack_.centers.size(); i++)
+    for (size_t i = 0; i < Pack_.centers.size(); i++)
     {
         SuperellipsoidParams s;
         const int shapeIndex = rand_deterministic(0, 3);
@@ -71,20 +99,20 @@ int main()
         {
             s.rx = 0.5, s.ry = 0.7, s.rz = 1., s.ee = 1.4, s.en = 1.2;
         }
-        s.rx *= 0.7 * SpherePack_.radii[i];
-        s.ry *= 0.7 * SpherePack_.radii[i];
-        s.rz *= 0.7 * SpherePack_.radii[i];
+        s.rx *= 0.7 * Pack_.radii[i];
+        s.ry *= 0.7 * Pack_.radii[i];
+        s.rz *= 0.7 * Pack_.radii[i];
         quaternion q = randomQuaternionUniform_deterministic();
 
-        SuperellipsoidParticle SP;
+        LevelSetObject::SuperellipsoidParticle SP;
         SP.setParams(s.rx, s.ry, s.rz, s.ee, s.en);
         SP.buildGridByResolution();
-        solver_.addLSParticle(SP.generateSurfacePointsUniform(int(10000 * SpherePack_.radii[i])), 
+        solver_.addLSParticle(SP.generateSurfacePointsUniform(int(10000 * Pack_.radii[i])), 
         SP.gridInfo().gridNodeLevelSetFunctionValue, 
         SP.gridInfo().gridOrigin, 
         SP.gridInfo().gridNodeSize, 
         SP.gridInfo().gridNodeSpacing, 
-        SpherePack_.centers[i], 
+        Pack_.centers[i], 
         make_double3(0., 0., 0.), 
         make_double3(0., 0., 0.), 
         q, 
@@ -94,12 +122,13 @@ int main()
         density);
     }
 
-    CylinderWall CW;
+    LevelSetObject::CylinderWall CW;
     CW.setGeometry(make_double3(- l, 0, 0.), 
     make_double3(l, 0., 0.), 
     2. * l);
     CW.buildGridByResolution(100);
-    solver_.addWall(CW.generateSurfacePointsUniform(1000), 
+    solver_.addWall(CW.vertexPosition(), 
+    CW.triangleVertexIndex(), 
     CW.gridInfo().gridNodeLevelSetFunctionValue, 
     CW.gridInfo().gridOrigin, 
     CW.gridInfo().gridNodeSize, 
@@ -116,7 +145,9 @@ int main()
     1.e-4, 
     5., 
     50, 
-    "tutorial2-period1");
+    "tutorial2-period1",
+    argc,
+    argv);
 
     solver_.setFixedAngularVelocityToWall(0, make_double3(M_PI, 0., 0.));
     solver_.solve(make_double3(-l, -2. * l, -2. * l), 
@@ -124,8 +155,10 @@ int main()
     make_double3(0., 0., -9.81), 
     1.e-4, 
     5., 
-    50., 
-    "tutorial2-period2");
+    50, 
+    "tutorial2-period2",
+    argc,
+    argv);
 
     solver_.setFixedAngularVelocityToWall(0, make_double3(0., 0., 0.));
     solver_.solve(make_double3(-l, -2. * l, -2. * l), 
@@ -133,6 +166,8 @@ int main()
     make_double3(0., 0., -9.81), 
     1.e-4, 
     2.5, 
-    25, 
-    "tutorial2-period3");
+    25,
+    "tutorial2-period3",
+    argc,
+    argv);
 }

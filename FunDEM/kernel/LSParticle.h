@@ -3,6 +3,7 @@
 #include "CUDAKernelFunction/myUtility/myMat.h"
 #include "CUDAKernelFunction/myUtility/mySpatialGrid.h"
 #include "CUDAKernelFunction/myUtility/myFileEdit.h"
+#include "myVec.h"
 #include <algorithm>
 #include <cstdint>
 #include <fstream>
@@ -99,6 +100,8 @@ public:
     *   it first downloads device -> host to keep host-side buffers consistent.
     *
     * @param[in] boundaryNodeLocalPosition      Boundary node positions in the particle LOCAL frame.
+    * @param[in] boundaryNodeConnectivity       Optional: particle faces (triangles).
+
     * @param[in] gridNodeLevelSetFunctionValue  Flattened LSF values on the particle background grid.
     *                                           Indexing: ix + nx*(iy + ny*iz).
     * @param[in] gridNodeLocalOrigin            LOCAL coordinate of grid node (0,0,0).
@@ -107,16 +110,17 @@ public:
     *
     * @param[in] position                       Particle center position in WORLD frame (will be shifted by rotated localCenter).
     * @param[in] velocity                       Particle linear velocity in WORLD frame.
-    * @param[in] angularvelocity                Particle angular velocity in WORLD frame.
+    * @param[in] angularVelocity                Particle angular velocity in WORLD frame.
     * @param[in] orientation                    Particle orientation (LOCAL -> WORLD).
     * @param[in] normalStiffness                Normal stiffness for this particle.
-    * @param[in] shearStiffness
-    * @param[in] frictionCoefficient
+    * @param[in] shearStiffness                 Shear stiffness for this particle.
+    * @param[in] frictionCoefficient            Friction coefficient for this particle.
     *
     * @param[in] density                        Material density used for grid integration.
     * @param[in] stream                         CUDA stream (used only if we must download device -> host).
     */
     void add(const std::vector<double3>& boundaryNodeLocalPosition,
+    const std::vector<int3>& boundaryNodeConnectivity,
     
     const std::vector<double>& gridNodeLevelSetFunctionValue,
     const double3 gridNodeLocalOrigin,
@@ -125,7 +129,7 @@ public:
 
     const double3 position,
     const double3 velocity,
-    const double3 angularvelocity,
+    const double3 angularVelocity,
     const quaternion orientation,
     const double normalStiffness,
     const double shearStiffness,
@@ -134,8 +138,38 @@ public:
     const double density,
     cudaStream_t stream)
     {
-        if (gridNodeSize.x < 2 || gridNodeSize.y < 2 || gridNodeSize.z < 2 || gridNodeSpacing <= 0.) return;
-        if (gridNodeSize.x * gridNodeSize.y * gridNodeSize.z != gridNodeLevelSetFunctionValue.size()) return;
+        if (gridNodeSize.x < 2 || gridNodeSize.y < 2 || gridNodeSize.z < 2)
+        {
+            std::cerr << "[LSParticle] Invalid level-set host grid size: ("
+                    << gridNodeSize.x << ", "
+                    << gridNodeSize.y << ", "
+                    << gridNodeSize.z << ")."
+                    << std::endl;
+            return;
+        }
+
+        if (gridNodeSpacing <= 0.0)
+        {
+            std::cerr << "[LSParticle] Invalid level-set host grid spacing: "
+                    << gridNodeSpacing << "."
+                    << std::endl;
+            return;
+        }
+
+        const size_t expectedNumGridNodes =
+            size_t(gridNodeSize.x) * size_t(gridNodeSize.y) * size_t(gridNodeSize.z);
+
+        if (expectedNumGridNodes != gridNodeLevelSetFunctionValue.size())
+        {
+            std::cerr << "[LSParticle] Inconsistent level-set host data size. "
+                    << "Expected "
+                    << expectedNumGridNodes
+                    << ", got "
+                    << gridNodeLevelSetFunctionValue.size()
+                    << "."
+                    << std::endl;
+            return;
+        }
 
         if (upload_)
         {
@@ -163,7 +197,7 @@ public:
             {
                 for (int z = 0; z < gridNodeSize.z; z++)
                 {
-                    const int index = x + gridNodeSize.x * (y + gridNodeSize.y * z);
+                    const int index = linearIndex3D(make_int3(x, y, z), gridNodeSize);
                     const double H = smoothHeaviside(gridNodeLevelSetFunctionValue[index] / gridNodeSpacing, 1.5);
                     mass += H;
                 }
@@ -184,7 +218,7 @@ public:
                 {
                     for (int z = 0; z < gridNodeSize.z; z++)
                     {
-                        const int index = x + gridNodeSize.x * (y + gridNodeSize.y * z);
+                        const int index = linearIndex3D(make_int3(x, y, z), gridNodeSize);
                         const double H = smoothHeaviside(gridNodeLevelSetFunctionValue[index] / gridNodeSpacing, 1.5);
                         localCenter.x += H * (gridNodeLocalOrigin.x + double(x) * gridNodeSpacing);
                         localCenter.y += H * (gridNodeLocalOrigin.y + double(y) * gridNodeSpacing);
@@ -200,7 +234,7 @@ public:
                 {
                     for (int z = 0; z < gridNodeSize.z; z++)
                     {
-                        const int index = x + gridNodeSize.x * (y + gridNodeSize.y * z);
+                        const int index = linearIndex3D(make_int3(x, y, z), gridNodeSize);
                         const double H = smoothHeaviside(gridNodeLevelSetFunctionValue[index] / gridNodeSpacing, 1.5);
                         double3 r = gridNodeLocalOrigin + gridNodeSpacing * make_double3(double(x), double(y), double(z)) - localCenter;
                         I.xx += H * (r.y * r.y + r.z * r.z) * m_gridNode;
@@ -213,6 +247,16 @@ public:
                 }
             }
             invI = inverse(I);
+        }
+
+        if (boundaryNodeConnectivity.size() > 0)
+        {
+            const int n = int(LSBoundaryNode_.num());
+            for (const auto& p:boundaryNodeConnectivity) 
+            {
+                const int3 p1 = make_int3(p.x + n, p.y + n, p.z + n);
+                LSBoundaryNodeConnectivity_.push_back(p1);
+            }
         }
 
         double radius = 0.;
@@ -230,16 +274,16 @@ public:
 
         position_.pushHost(position + rotateVectorByQuaternion(orientation, localCenter));
         velocity_.pushHost(velocity);
-        angularVelocity_.pushHost(angularvelocity);
+        angularVelocity_.pushHost(angularVelocity);
         force_.pushHost(make_double3(0., 0., 0.));
         torque_.pushHost(make_double3(0., 0., 0.));
         orientation_.pushHost(orientation);
         radius_.pushHost(radius);
         inverseMass_.pushHost(invM);
         inverseInertiaTensor_.pushHost(invI);
-        normalStiffness_.pushHost(normalStiffness);
-        shearStiffness_.pushHost(shearStiffness);
-        frictionCoefficient_.pushHost(frictionCoefficient);
+        normalStiffness_.pushHost(normalStiffness > 0. ? normalStiffness : 0.);
+        shearStiffness_.pushHost(shearStiffness > 0. ? shearStiffness : 0.);
+        frictionCoefficient_.pushHost(frictionCoefficient > 0. ? frictionCoefficient : 0.);
 
         gridNodeLocalOrigin_.pushHost(gridNodeLocalOrigin - localCenter);
         inverseGridNodeSpacing_.pushHost(1. / gridNodeSpacing);
@@ -317,7 +361,7 @@ public:
         MKDIR(dir.c_str());
 
         std::ostringstream fname;
-        fname << dir << "/LSParticle_" << std::setw(4) << std::setfill('0') << iFrame << ".vtu";
+        fname << dir << "/LSObject_" << std::setw(4) << std::setfill('0') << iFrame << ".vtu";
 
         const size_t N = LSBoundaryNode_.num();
 
@@ -429,7 +473,7 @@ public:
             << "      <PointData>\n"
             << "        <DataArray type=\"Int32\" Name=\"particle ID\" format=\"appended\" offset=\"" << off_pid << "\"/>\n"
             << "        <DataArray type=\"Float32\" Name=\"velocity\" NumberOfComponents=\"3\" format=\"appended\" offset=\"" << off_vel << "\"/>\n"
-            << "        <DataArray type=\"Float32\" Name=\"angularVelocity\" NumberOfComponents=\"3\" format=\"appended\" offset=\"" << off_angVel << "\"/>\n"
+            << "        <DataArray type=\"Float32\" Name=\"angular velocity\" NumberOfComponents=\"3\" format=\"appended\" offset=\"" << off_angVel << "\"/>\n"
             << "      </PointData>\n"
             << "    </Piece>\n"
             << "  </UnstructuredGrid>\n"
@@ -461,6 +505,175 @@ public:
         writeBlock(angVel.data(), angVel.size() * sizeof(float));
 
         out << "\n  </AppendedData>\n</VTKFile>\n";
+    }
+
+    void outputVTU_connectivity(const std::string& dir, const size_t iFrame, const size_t iStep, const double time)
+    {
+        if (LSBoundaryNodeConnectivity_.empty()) return;
+
+        MKDIR(dir.c_str());
+
+        std::ostringstream fname;
+        fname << dir << "/LSObjectMesh_"
+            << std::setw(4) << std::setfill('0') << iFrame
+            << ".vtu";
+
+        const size_t N = LSBoundaryNode_.num();
+        const size_t M = LSBoundaryNodeConnectivity_.size();
+
+        const std::vector<int>& pID = LSBoundaryNode_.particleIDHostRef();
+        const std::vector<double3>& pLocal = LSBoundaryNode_.localPositionHostRef();
+
+        const std::vector<double3>& p_p = position_.hostRef();
+        const std::vector<double3>& v_p = velocity_.hostRef();
+        const std::vector<double3>& w_p = angularVelocity_.hostRef();
+        const std::vector<quaternion>& q_p = orientation_.hostRef();
+
+        std::ofstream out(fname.str());
+        if (!out) throw std::runtime_error("Cannot open " + fname.str());
+
+        out << "<?xml version=\"1.0\"?>\n";
+        out << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" byte_order=\"LittleEndian\">\n";
+        out << "  <UnstructuredGrid>\n";
+        out << "    <FieldData>\n";
+        out << "      <DataArray type=\"Float32\" Name=\"TIME\" NumberOfTuples=\"1\" format=\"ascii\"> "
+            << static_cast<float>(time) << " </DataArray>\n";
+        out << "      <DataArray type=\"Int32\" Name=\"STEP\" NumberOfTuples=\"1\" format=\"ascii\"> "
+            << static_cast<int32_t>(iStep) << " </DataArray>\n";
+        out << "    </FieldData>\n";
+        out << "    <Piece NumberOfPoints=\"" << N
+            << "\" NumberOfCells=\"" << M << "\">\n";
+
+        // -------------------------------------------------------------------------
+        // Points
+        // -------------------------------------------------------------------------
+        out << "      <Points>\n";
+        out << "        <DataArray type=\"Float32\" NumberOfComponents=\"3\" format=\"ascii\">\n";
+
+        for (size_t i = 0; i < N; ++i)
+        {
+            const int p = pID[i];
+
+            double3 pw = make_double3(0.0, 0.0, 0.0);
+
+            if (p >= 0 && static_cast<size_t>(p) < p_p.size())
+            {
+                pw = p_p[p] + rotateVectorByQuaternion(q_p[p], pLocal[i]);
+            }
+
+            out << "          "
+                << static_cast<float>(pw.x) << " "
+                << static_cast<float>(pw.y) << " "
+                << static_cast<float>(pw.z) << "\n";
+        }
+
+        out << "        </DataArray>\n";
+        out << "      </Points>\n";
+
+        // -------------------------------------------------------------------------
+        // Cells
+        // -------------------------------------------------------------------------
+        out << "      <Cells>\n";
+
+        out << "        <DataArray type=\"Int32\" Name=\"connectivity\" format=\"ascii\">\n";
+        for (size_t i = 0; i < M; ++i)
+        {
+            const int3 tri = LSBoundaryNodeConnectivity_[i];
+
+            if (tri.x < 0 || tri.y < 0 || tri.z < 0 ||
+                static_cast<size_t>(tri.x) >= N ||
+                static_cast<size_t>(tri.y) >= N ||
+                static_cast<size_t>(tri.z) >= N)
+            {
+                std::cerr << "[outputVTU] Invalid triangle index at triangle "
+                        << i << std::endl;
+                out << "          0 0 0\n";
+                continue;
+            }
+
+            out << "          "
+                << tri.x << " "
+                << tri.y << " "
+                << tri.z << "\n";
+        }
+        out << "        </DataArray>\n";
+
+        out << "        <DataArray type=\"Int32\" Name=\"offsets\" format=\"ascii\">\n";
+        for (size_t i = 0; i < M; ++i)
+        {
+            out << "          " << static_cast<int32_t>(3 * (i + 1)) << "\n";
+        }
+        out << "        </DataArray>\n";
+
+        out << "        <DataArray type=\"UInt8\" Name=\"types\" format=\"ascii\">\n";
+        for (size_t i = 0; i < M; ++i)
+        {
+            out << "          5\n"; // VTK_TRIANGLE
+        }
+        out << "        </DataArray>\n";
+
+        out << "      </Cells>\n";
+
+        // -------------------------------------------------------------------------
+        // Point data
+        // -------------------------------------------------------------------------
+        out << "      <PointData Vectors=\"velocity\">\n";
+
+        out << "        <DataArray type=\"Int32\" Name=\"particle ID\" format=\"ascii\">\n";
+        for (size_t i = 0; i < N; ++i)
+        {
+            out << "          " << static_cast<int32_t>(pID[i]) << "\n";
+        }
+        out << "        </DataArray>\n";
+
+        out << "        <DataArray type=\"Float32\" Name=\"velocity\" NumberOfComponents=\"3\" format=\"ascii\">\n";
+        for (size_t i = 0; i < N; ++i)
+        {
+            const int p = pID[i];
+
+            double3 vw = make_double3(0.0, 0.0, 0.0);
+
+            if (p >= 0 &&
+                static_cast<size_t>(p) < p_p.size() &&
+                static_cast<size_t>(p) < v_p.size() &&
+                static_cast<size_t>(p) < w_p.size() &&
+                static_cast<size_t>(p) < q_p.size())
+            {
+                const double3 pw = p_p[p] + rotateVectorByQuaternion(q_p[p], pLocal[i]);
+                vw = v_p[p] + cross(w_p[p], pw - p_p[p]);
+            }
+
+            out << "          "
+                << static_cast<float>(vw.x) << " "
+                << static_cast<float>(vw.y) << " "
+                << static_cast<float>(vw.z) << "\n";
+        }
+        out << "        </DataArray>\n";
+
+        out << "        <DataArray type=\"Float32\" Name=\"angular velocity\" NumberOfComponents=\"3\" format=\"ascii\">\n";
+        for (size_t i = 0; i < N; ++i)
+        {
+            const int p = pID[i];
+
+            double3 ww = make_double3(0.0, 0.0, 0.0);
+
+            if (p >= 0 && static_cast<size_t>(p) < w_p.size())
+            {
+                ww = w_p[p];
+            }
+
+            out << "          "
+                << static_cast<float>(ww.x) << " "
+                << static_cast<float>(ww.y) << " "
+                << static_cast<float>(ww.z) << "\n";
+        }
+        out << "        </DataArray>\n";
+
+        out << "      </PointData>\n";
+
+        out << "    </Piece>\n";
+        out << "  </UnstructuredGrid>\n";
+        out << "</VTKFile>\n";
     }
 
     void finalize(cudaStream_t stream)
@@ -542,8 +755,9 @@ public:
 
     LSGridNode LSGridNode_;
     LSBoundaryNode LSBoundaryNode_;
-
     spatialGrid spatialGrid_;
+
+    std::vector<int3> LSBoundaryNodeConnectivity_;
 
 private:
     void copyHostToDevice(cudaStream_t stream)
@@ -608,6 +822,4 @@ private:
     size_t blockDim_{1};
 
     bool upload_{false};
-
-    std::vector<int3> triangleVertexID_;
 };

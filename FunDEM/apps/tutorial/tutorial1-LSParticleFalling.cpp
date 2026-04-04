@@ -1,16 +1,28 @@
 #include "kernel/LSSolver.h"
-#include "kernel/LSParticleGenerator.h"
-#include "kernel/spherePackGenerator.h"
+#include "kernel/helper/LevelSetObjectGenerator.h"
+#include "kernel/helper/SpherePackingGenerator.h"
+#include "kernel/helper/OBJLoader.h"
 #include "globalDamping.cuh"
+#include "myVec.h"
 
-struct SuperellipsoidParams 
+inline quaternion randomQuaternionUniform_deterministic()
 {
-    double rx{1.};
-    double ry{1.};
-    double rz{1.};
-    double ee{1.};
-    double en{1.};
-};
+    static std::mt19937 rng(123456);
+    std::uniform_real_distribution<double> U(0.0, 1.0);
+
+    const double u1 = U(rng), u2 = U(rng), u3 = U(rng);
+    const double s1 = std::sqrt(1.0 - u1);
+    const double s2 = std::sqrt(u1);
+    const double a = 2.0 * M_PI * u2;
+    const double b = 2.0 * M_PI * u3;
+
+    return quaternion{
+        s2 * std::cos(b),
+        s1 * std::sin(a),
+        s1 * std::cos(a),
+        s2 * std::sin(b)
+    };
+}
 
 class solver:
     public LSSolver
@@ -34,71 +46,53 @@ public:
     }
 };
 
-int main()
+int main(const int argc, char** argv)
 {
-    const double l = 1.;
+    const double l = 1.5;
     const double3 boxMin = make_double3(0., 0., 0.);
-    const double3 boxMax = make_double3(l, l, 6. * l);
-    const double rMin = 0.1;
-    const double rMax = 0.3;
-    const double density = 1000.;
-    const int nSpheres_max = 3000;
+    const double3 boxMax = make_double3(l, l, 3. * l);
 
-    SpherePack SpherePack_ = generateNonOverlappingSpheresInBox_LargeFirst(boxMin, 
-    boxMax, 
-    nSpheres_max, 
-    rMin, 
-    rMax);
+    const double density = 1000.;
+    std::vector<double3> vertexPosition; 
+    std::vector<int3> triangleVertexIndex;
+    OBJLoader::loadOBJMesh("bunny.obj", vertexPosition, triangleVertexIndex, argc, argv);
+    for (auto& p:vertexPosition) p.y -= 0.1;
+    LevelSetObject::TriangleMeshParticle TMP;
+    TMP.setMesh(vertexPosition, triangleVertexIndex);
+    TMP.buildGridByResolution();
+    TMP.outputGridVTU("build/bunny");
+
+    SpherePacking::Pack Pack_ = SpherePacking::buildRegularInBox(boxMin, 
+    boxMax,
+    0.5 * length(TMP.boundingBoxMax() - TMP.boundingBoxMin()));
 
     solver solver_;
 
-    for (size_t i = 0; i < SpherePack_.centers.size(); i++)
+    for (size_t i = 0; i < Pack_.centers.size(); i++)
     {
-        SuperellipsoidParams s;
-        const int shapeIndex = rand_deterministic(0, 3);
-        if (shapeIndex == 0)
-        {
-            s.rx = 0.4, s.ry = 1., s.rz = 0.8, s.ee = 0.4, s.en = 1.6;
-        }
-        else if (shapeIndex == 1)
-        {
-            s.rx = 0.42, s.ry = 1., s.rz = 0.83, s.ee = 0.1, s.en = 1.;
-        }
-        else if (shapeIndex == 2)
-        {
-            s.rx = 1., s.ry = 1., s.rz = 1., s.ee = 1., s.en = 0.5;
-        }
-        else if (shapeIndex == 3)
-        {
-            s.rx = 0.5, s.ry = 0.7, s.rz = 1., s.ee = 1.4, s.en = 1.2;
-        }
-        s.rx *= 0.7 * SpherePack_.radii[i];
-        s.ry *= 0.7 * SpherePack_.radii[i];
-        s.rz *= 0.7 * SpherePack_.radii[i];
         quaternion q = randomQuaternionUniform_deterministic();
-
-        SuperellipsoidParticle SP;
-        SP.setParams(s.rx, s.ry, s.rz, s.ee, s.en);
-        SP.buildGridByResolution();
-        solver_.addLSParticle(SP.generateSurfacePointsUniform(int(10000 * SpherePack_.radii[i])), 
-        SP.gridInfo().gridNodeLevelSetFunctionValue, 
-        SP.gridInfo().gridOrigin, 
-        SP.gridInfo().gridNodeSize, 
-        SP.gridInfo().gridNodeSpacing, 
-        SpherePack_.centers[i], 
+        
+        solver_.addLSParticle(TMP.vertexPosition(), 
+        TMP.gridInfo().gridNodeLevelSetFunctionValue, 
+        TMP.gridInfo().gridOrigin, 
+        TMP.gridInfo().gridNodeSize, 
+        TMP.gridInfo().gridNodeSpacing, 
+        Pack_.centers[i], 
         make_double3(0., 0., 0.), 
         make_double3(0., 0., 0.), 
         q, 
         6.e5, 
         1.8e5, 
         0.577,
-        density);
+        density,
+        TMP.triangleVertexIndex());
     }
 
-    BoxWall BW;
+    LevelSetObject::BoxWall BW;
     BW.setParams(boxMax.x - boxMin.x, boxMax.y - boxMin.y, boxMax.z - boxMin.z);
     BW.buildGridByResolution();
-    solver_.addWall(BW.generateSurfacePointsUniform(1000), 
+    solver_.addWall(BW.vertexPosition(), 
+    BW.triangleVertexIndex(),
     BW.gridInfo().gridNodeLevelSetFunctionValue, 
     BW.gridInfo().gridOrigin, 
     BW.gridInfo().gridNodeSize, 
@@ -115,5 +109,7 @@ int main()
     1.e-4, 
     5., 
     50, 
-    "tutorial1");
+    "tutorial1",
+    argc,
+    argv);
 }

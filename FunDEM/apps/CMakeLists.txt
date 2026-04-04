@@ -86,4 +86,25 @@ foreach(main_src ${APP_MAIN_SRCS})
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED YES
     )
+
+    # ------------------------------------------------------------
+    # Copy all .obj files in the same directory as the main source
+    # into the executable output directory after build
+    # ------------------------------------------------------------
+    get_filename_component(main_dir "${main_src}" DIRECTORY)
+
+    file(GLOB MAIN_DIR_OBJ_FILES CONFIGURE_DEPENDS
+        "${main_dir}/*.obj"
+    )
+
+    if (MAIN_DIR_OBJ_FILES)
+        add_custom_command(TARGET ${exe_name} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                    "$<TARGET_FILE_DIR:${exe_name}>"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    ${MAIN_DIR_OBJ_FILES}
+                    "$<TARGET_FILE_DIR:${exe_name}>"
+            COMMENT "Copying OBJ files for ${exe_name}"
+        )
+    endif()
 endforeach()

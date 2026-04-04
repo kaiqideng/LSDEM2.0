@@ -2,6 +2,7 @@
 #include "CUDAKernelFunction/LSParticleContactDetectionKernel.cuh"
 #include "CUDAKernelFunction/contactKernel.cuh"
 #include "CUDAKernelFunction/particleIntegrationKernel.cuh"
+#include <filesystem>
 
 class LSSolver
 {
@@ -15,6 +16,24 @@ public:
 
     ~LSSolver() = default;
 
+    /**
+     * @brief Add one free level-set particle.
+     *
+     * @param boundaryNodeLocalPosition Local boundary node positions of the particle.
+     * @param gridNodeLevelSetFunctionValue Level-set values stored on the background grid nodes.
+     * @param gridNodeLocalOrigin Local origin of the level-set grid.
+     * @param gridNodeSize Grid resolution in x-, y-, and z-directions.
+     * @param gridNodeSpacing Uniform grid spacing of the level-set grid.
+     * @param position Initial world position of the particle.
+     * @param velocity Initial translational velocity of the particle.
+     * @param angularVelocity Initial angular velocity of the particle.
+     * @param orientation Initial particle orientation.
+     * @param normalStiffness Normal contact stiffness.
+     * @param shearStiffness Shear contact stiffness.
+     * @param frictionCoefficient Friction coefficient.
+     * @param density Particle density.
+     * @param boundaryNodeConnectivity Optional boundary mesh connectivity.
+     */
     void addLSParticle(const std::vector<double3>& boundaryNodeLocalPosition,
     const std::vector<double>& gridNodeLevelSetFunctionValue,
     const double3 gridNodeLocalOrigin,
@@ -22,21 +41,23 @@ public:
     const double gridNodeSpacing,
     const double3 position,
     const double3 velocity,
-    const double3 angularvelocity,
+    const double3 angularVelocity,
     const quaternion orientation,
     const double normalStiffness,
     const double shearStiffness,
     const double frictionCoefficient,
-    const double density)
+    const double density,
+    const std::vector<int3>& boundaryNodeConnectivity = {})
     {
         LSParticle_.add(boundaryNodeLocalPosition, 
+        boundaryNodeConnectivity, 
         gridNodeLevelSetFunctionValue, 
         gridNodeLocalOrigin, 
         gridNodeSize, 
         gridNodeSpacing, 
         position, 
         velocity, 
-        angularvelocity, 
+        angularVelocity, 
         orientation, 
         normalStiffness,
         shearStiffness,
@@ -45,7 +66,23 @@ public:
         stream_);
     }
 
-    void addWall(const std::vector<double3>& boundaryNodeLocalPosition,
+    /**
+     * @brief Add one fixed wall object represented by a level-set particle.
+     *
+     * @param objVertexLocalPosition Local mesh vertex positions of the wall object.
+     * @param objTriangleVertexID Triangle connectivity of the wall mesh.
+     * @param gridNodeLevelSetFunctionValue Level-set values stored on the background grid nodes.
+     * @param gridNodeLocalOrigin Local origin of the level-set grid.
+     * @param gridNodeSize Grid resolution in x-, y-, and z-directions.
+     * @param gridNodeSpacing Uniform grid spacing of the level-set grid.
+     * @param position Initial world position of the wall object.
+     * @param orientation Initial wall orientation.
+     * @param normalStiffness Normal contact stiffness.
+     * @param shearStiffness Shear contact stiffness.
+     * @param frictionCoefficient Friction coefficient.
+     */
+    void addWall(const std::vector<double3>& objVertexLocalPosition,
+    const std::vector<int3>& objTriangleVertexID, 
     const std::vector<double>& gridNodeLevelSetFunctionValue,
     const double3 gridNodeLocalOrigin,
     const int3 gridNodeSize,
@@ -56,7 +93,8 @@ public:
     const double shearStiffness,
     const double frictionCoefficient)
     {
-        fixedLSParticle_.add(boundaryNodeLocalPosition, 
+        fixedLSParticle_.add(objVertexLocalPosition, 
+        objTriangleVertexID, 
         gridNodeLevelSetFunctionValue, 
         gridNodeLocalOrigin, 
         gridNodeSize, 
@@ -92,6 +130,16 @@ public:
         fixedLSParticle_.setAngularVelocity(index, angularVelocity, stream_);
     }
 
+    /**
+     * @brief Create bonded interactions between free level-set particles.
+     *
+     * @param YoungsModulus Bond Young's modulus.
+     * @param poissonRatio Bond Poisson ratio.
+     * @param radius Bond creation radius.
+     * @param tensileStrength Bond tensile strength.
+     * @param cohesion Bond cohesion.
+     * @param frictionCoefficient Bond friction coefficient.
+     */
     void addBondedParticleInteraction(const double YoungsModulus, 
     const double poissonRatio, 
     const double radius, 
@@ -111,27 +159,76 @@ public:
         stream_);
     }
 
+    /**
+     * @brief Run the solver time integration loop.
+     *
+     * @param minDomain Minimum simulation domain corner.
+     * @param maxDomain Maximum simulation domain corner.
+     * @param gravity Gravity acceleration.
+     * @param timeStep Time step size.
+     * @param maximumTime Maximum physical simulation time.
+     * @param numFrame Requested number of output frames.
+     * @param outputDir Output directory.
+     * @param argc Argument count from main().
+     * @param argv Argument array from main().
+     */
     void solve(const double3 minDomain, 
     const double3 maxDomain, 
     const double3 gravity, 
     const double timeStep, 
     const double maximumTime,
     const size_t numFrame,
-    const std::string dir, 
-    const size_t updateSpatialGridGap = 5)
+    std::string outputDir, 
+    const int argc,
+    char** argv)
     {
-        std::cout << "All output files generated by the solver are stored under: " << dir << std::endl;
-        std::cout << "Checking Input..." << std::endl;
-        const double3 domainSize = maxDomain - minDomain;
-        if (domainSize.x <= 0. || domainSize.y <= 0. || domainSize.z <= 0. ) return;
-        if (timeStep <= 0. || maximumTime <= 0.) return;
+        const char* argv0 = (argc > 0) ? argv[0] : nullptr;
+        outputDir = resolveOutputDirFromBuild(outputDir, argv0);
+        std::filesystem::create_directories(outputDir);
+        std::cout << "[Solver] Output: " << outputDir << std::endl;
+        std::cout << "[Solver] Uploading..." << std::endl;
 
-        removeFiles(dir);
+        const double3 domainSize = maxDomain - minDomain;
+        if (domainSize.x <= 0.0 || domainSize.y <= 0.0 || domainSize.z <= 0.0)
+        {
+            std::cerr << "[Solver] Invalid simulation domain size: ("
+                    << domainSize.x << ", "
+                    << domainSize.y << ", "
+                    << domainSize.z << ")."
+                    << std::endl;
+            return;
+        }
+
+        if (timeStep <= 0.0)
+        {
+            std::cerr << "[Solver] Invalid timeStep: "
+                    << timeStep << "."
+                    << std::endl;
+            return;
+        }
+
+        if (maximumTime <= 0.0)
+        {
+            std::cerr << "[Solver] Invalid maximumTime: "
+                    << maximumTime << "."
+                    << std::endl;
+            return;
+        }
+
+        if (LSParticle_.LSBoundaryNode_.num() == 0)
+        {
+            std::cerr << "[Solver] The number of free LS-Particles: "
+                    << "0."
+                    << std::endl;
+            return;
+        }
+
+        removeFiles(outputDir);
         activateGPUDevice();
         upload(minDomain, maxDomain);
         updateSpatialGrid();
         buildLSParticleInteraction();
-        std::cout << "Data Upload Completed" << std::endl;
+        std::cout << "[Solver] Upload Completed" << std::endl;
 
         const size_t numStep = size_t(maximumTime / timeStep) + 1;
         size_t frameInterval = numStep;
@@ -140,20 +237,19 @@ public:
         size_t iStep = 0, iFrame = 0;
         double time = 0.;
         const double halfTimeStep = 0.5 * timeStep;
-        output(dir, iFrame, iStep, time);
+        output(outputDir, iFrame, iStep, time);
         while (iStep <= numStep)
         {
-            simulateOneStep(iStep, time, gravity, halfTimeStep, updateSpatialGridGap);
+            simulateOneStep(iStep, time, gravity, halfTimeStep);
             if (iStep % frameInterval == 0)
             {
                 iFrame++;
-                std::cout << "Frame " << iFrame << " at Time " << time << std::endl;
-                output(dir, iFrame, iStep, time);
+                output(outputDir, iFrame, iStep, time);
             }
         }
         iFrame++;
-        output(dir, iFrame, iStep, time);
-        std::cout << "Simulation Completed" << std::endl;
+        output(outputDir, iFrame, iStep, time);
+        std::cout << "[Solver] Simulation Completed" << std::endl;
     }
 
     void copyFromHost(const LSSolver& other)
@@ -179,15 +275,55 @@ protected:
     BondedParticleInteraction& getBondedParticleInteraction() { return BondedParticleInteraction_; }
 
 private:
-    void removeFiles(const std::string dir)
+    inline std::filesystem::path getBuildDirectoryFromExecutable(const char* argv0)
     {
-        const std::string dir1 = dir + "/Particle";
-        const std::string dir2 = dir + "/ParticleInteraction";
-        const std::string dir3 = dir + "/Wall";
-        const std::string dir4 = dir + "/Particle-WallInteraction";
+        if (argv0 == nullptr) return std::filesystem::current_path();
 
-        MKDIR(dir.c_str());
+        std::filesystem::path exePath(argv0);
 
+        if (exePath.is_relative())
+        {
+            exePath = std::filesystem::absolute(exePath);
+        }
+
+        exePath = std::filesystem::weakly_canonical(exePath);
+
+        std::filesystem::path outputDir = exePath.parent_path();
+
+        while (!outputDir.empty() && outputDir.filename() != "build")
+        {
+            const std::filesystem::path parent = outputDir.parent_path();
+            if (parent == outputDir) break;
+            outputDir = parent;
+        }
+
+        if (!outputDir.empty() && outputDir.filename() == "build")
+        {
+            return outputDir;
+        }
+
+        return exePath.parent_path();
+    }
+
+    inline std::string resolveOutputDirFromBuild(const std::string& outputDirName, const char* argv0)
+    {
+        const std::filesystem::path p(outputDirName);
+
+        const std::filesystem::path resolvedPath =
+            p.is_absolute()
+            ? p
+            : getBuildDirectoryFromExecutable(argv0) / p;
+
+        return resolvedPath.string();
+    }
+
+    void removeFiles(const std::string outputDir)
+    {
+        const std::string dir1 = outputDir + "/Particle";
+        const std::string dir2 = outputDir + "/ParticleInteraction";
+        const std::string dir3 = outputDir + "/Wall";
+        const std::string dir4 = outputDir + "/Particle-WallInteraction";
+        MKDIR(outputDir.c_str());
         removeVtuFiles(dir1);
         removeVtuFiles(dir2);
         removeVtuFiles(dir3);
@@ -213,20 +349,23 @@ private:
         maxGPUThread_, 
         stream_);
 
-        fixedLSParticle_.initialize(minDomain, 
-        maxDomain, 
-        maxGPUThread_, 
-        stream_);
-
         LSParticleInteraction_.initialize(LSParticle_, 
         maxGPUThread_, 
         stream_);
 
-        fixedLSParticleInteraction_.initialize(LSParticle_, 
-        maxGPUThread_, 
-        stream_);
+        if (fixedLSParticle_.num() > 0) 
+        {
+            fixedLSParticle_.initialize(minDomain, 
+            maxDomain, 
+            maxGPUThread_, 
+            stream_);
 
-        BondedParticleInteraction_.initialize(maxGPUThread_, 
+            fixedLSParticleInteraction_.initialize(LSParticle_, 
+            maxGPUThread_, 
+            stream_);
+        }
+
+        if (BondedParticleInteraction_.numPair() > 0) BondedParticleInteraction_.initialize(maxGPUThread_, 
         stream_);
     }
 
@@ -517,10 +656,10 @@ private:
         stream_);
     }
 
-    void simulateOneStep(size_t& iStep, double& time, const double3 gravity, const double halfTimeStep, const size_t updateSpatialGridGap)
+    void simulateOneStep(size_t& iStep, double& time, const double3 gravity, const double halfTimeStep)
     {
         iStep += 1;
-        if (iStep % updateSpatialGridGap == 0) updateSpatialGrid();
+        updateSpatialGrid();
         buildLSParticleInteraction();
         calLSParticleContactForceTorque(halfTimeStep);
         time += halfTimeStep;
@@ -537,40 +676,39 @@ private:
     {
         LSParticle_.finalize(stream_);
         LSParticleInteraction_.finalize(stream_);
-        if (fixedLSParticle_.num() > 0)
+        if (fixedLSParticle_.num_device() > 0)
         {
             fixedLSParticle_.finalize(stream_);
             fixedLSParticleInteraction_.finalize(stream_);
         }
-        if (BondedParticleInteraction_.numPair() > 0) BondedParticleInteraction_.finalize(stream_);
+        if (BondedParticleInteraction_.numPair_device() > 0) BondedParticleInteraction_.finalize(stream_);
     }
 
-    void output(const std::string &dir, const size_t iFrame, const size_t iStep, const double time)
+    void output(const std::string &outputDir, const size_t iFrame, const size_t iStep, const double time)
     {
+        std::cout << "[Solver] ------ Frame " << iFrame << " at Time " << time << " ------ " << std::endl;
+        std::cout << "[Solver] Downloading..." << std::endl;
         download();
+        std::cout << "[Solver] Download Completed" << std::endl;
 
-        const std::string dir1 = dir + "/Particle";
-        const std::string dir2 = dir + "/ParticleInteraction";
-        const std::string dir3 = dir + "/Wall";
-        const std::string dir4 = dir + "/Particle-WallInteraction";
-
-        MKDIR(dir.c_str());
-
+        std::cout << "[Solver] Outputting... " << std::endl;
+        const std::string dir1 = outputDir + "/Particle";
+        const std::string dir2 = outputDir + "/ParticleInteraction";
+        const std::string dir3 = outputDir + "/Wall";
+        const std::string dir4 = outputDir + "/Particle-WallInteraction";
+        MKDIR(outputDir.c_str());
         LSParticle_.outputVTU(dir1, iFrame, iStep, time);
-
+        LSParticle_.outputVTU_connectivity(dir1, iFrame, iStep, time);
         LSParticleInteraction_.outputVTU(LSParticle_.LSBoundaryNode_.particleIDHostRef(), 
         LSParticle_.normalStiffnessHostRef(),
         LSParticle_.shearStiffnessHostRef(),
         LSParticle_.normalStiffnessHostRef(),
         LSParticle_.shearStiffnessHostRef(),
         dir2, iFrame, iStep, time);
-
         if (BondedParticleInteraction_.numPair() > 0) BondedParticleInteraction_.outputVTU(dir2, iFrame, iStep, time);
-
         if (fixedLSParticle_.num() > 0)
         {
-            fixedLSParticle_.outputVTU(dir3, iFrame, iStep, time);
-
+            fixedLSParticle_.outputVTU_connectivity(dir3, iFrame, iStep, time);
             fixedLSParticleInteraction_.outputVTU(LSParticle_.LSBoundaryNode_.particleIDHostRef(), 
             LSParticle_.normalStiffnessHostRef(),
             LSParticle_.shearStiffnessHostRef(),
@@ -578,6 +716,7 @@ private:
             fixedLSParticle_.shearStiffnessHostRef(),
             dir4, iFrame, iStep, time);
         }
+        std::cout << "[Solver] Output Completed" << std::endl;
     }
 
 private:

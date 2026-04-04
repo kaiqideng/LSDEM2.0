@@ -100,6 +100,12 @@ static bool inline hasVtiExt(const char* fname)
     return dot && std::strcmp(dot, ".vti") == 0;
 }
 
+static bool inline hasObjExt(const char* fname)
+{
+    const char* dot = strrchr(fname, '.');
+    return dot && std::strcmp(dot, ".obj") == 0;
+}
+
 static bool inline hasDatExt(const char* fname)
 {
     const char* dot = strrchr(fname, '.');
@@ -155,6 +161,25 @@ static int inline removeVtiFiles(const std::string& dir)
     {
         if (ent->d_type == DT_DIR) continue;
         if (!hasVtiExt(ent->d_name)) continue;
+
+        std::string full = dir + "/" + ent->d_name;
+        if (std::remove(full.c_str()) == 0) ++removed;
+    }
+    closedir(dp);
+    return removed;
+}
+
+static int inline removeObjFiles(const std::string& dir)
+{
+    DIR* dp = opendir(dir.c_str());
+    if (!dp) return 0;
+
+    int removed = 0;
+    struct dirent* ent;
+    while ((ent = readdir(dp)) != NULL)
+    {
+        if (ent->d_type == DT_DIR) continue;
+        if (!hasObjExt(ent->d_name)) continue;
 
         std::string full = dir + "/" + ent->d_name;
         if (std::remove(full.c_str()) == 0) ++removed;
