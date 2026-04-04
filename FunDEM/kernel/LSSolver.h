@@ -1,4 +1,6 @@
+
 #include "LSInteraction.h"
+#include "VBondedInteraction.h"
 #include "CUDAKernelFunction/LSParticleContactDetectionKernel.cuh"
 #include "CUDAKernelFunction/contactKernel.cuh"
 #include "CUDAKernelFunction/particleIntegrationKernel.cuh"
@@ -7,11 +9,11 @@
 class LSSolver
 {
 public:
-    LSSolver(cudaStream_t stream, const size_t deviceID = 0, const size_t maxGPUThread = 256)
+    LSSolver(cudaStream_t stream, const size_t maxGPUThread = 256, const int device = 0)
     {
         stream_ = stream;
-        deviceID_ = deviceID;
         maxGPUThread_ = maxGPUThread;
+        activateGPUDevice(device);
     }
 
     ~LSSolver() = default;
@@ -140,23 +142,42 @@ public:
      * @param cohesion Bond cohesion.
      * @param frictionCoefficient Bond friction coefficient.
      */
-    void addBondedParticleInteraction(const double YoungsModulus, 
+    void addBondedInteraction(const double radius, 
+    const double YoungsModulus, 
     const double poissonRatio, 
-    const double radius, 
     const double tensileStrength = 0., 
     const double cohesion= 0., 
     const double frictionCoefficient= 0.)
     {
-        BondedParticleInteraction_.addLSBond(LSParticle_, 
-        LSParticleInteraction_, 
-        YoungsModulus, 
-        poissonRatio, 
-        radius, 
-        tensileStrength, 
-        cohesion, 
-        frictionCoefficient, 
-        maxGPUThread_, 
-        stream_);
+        std::vector<double3> point = LSParticleInteraction_.contactPointHostCopy();
+        std::vector<double3> normal = LSParticleInteraction_.contactNormalHostCopy();
+        std::vector<int> masterBoundaryNodeID = LSParticleInteraction_.masterBoundaryNodeIDHostCopy();
+        std::vector<int> slaveParticleID = LSParticleInteraction_.slaveParticleIDHostCopy();
+        const std::vector<int>& masterBoundaryNodeParticleID = LSParticle_.LSBoundaryNode_.particleIDHostRef();
+        std::vector<double3> position = LSParticle_.positionHostCopy();
+        std::vector<quaternion> orientation = LSParticle_.orientationHostCopy();
+
+        for(size_t k = 0; k < point.size(); k++)
+        {
+            const int i = masterBoundaryNodeParticleID[masterBoundaryNodeID[k]];
+            const int j = slaveParticleID[k];
+            VBondedInteraction_.add(i, 
+            j, 
+            position[i], 
+            position[j], 
+            orientation[i], 
+            orientation[j], 
+            point[k], 
+            normal[k], 
+            radius, 
+            2. * radius, 
+            YoungsModulus, 
+            poissonRatio, 
+            tensileStrength, 
+            cohesion, 
+            frictionCoefficient, 
+            stream_);
+        }
     }
 
     /**
@@ -224,7 +245,6 @@ public:
         }
 
         removeFiles(outputDir);
-        activateGPUDevice();
         upload(minDomain, maxDomain);
         updateSpatialGrid();
         buildLSParticleInteraction();
@@ -240,7 +260,8 @@ public:
         output(outputDir, iFrame, iStep, time);
         while (iStep <= numStep)
         {
-            simulateOneStep(iStep, time, gravity, halfTimeStep);
+            simulateOneStep(time, gravity, halfTimeStep);
+            iStep += 1;
             if (iStep % frameInterval == 0)
             {
                 iFrame++;
@@ -258,11 +279,10 @@ public:
         fixedLSParticle_.copyFromHost(other.fixedLSParticle_);
         LSParticleInteraction_.copyFromHost(other.LSParticleInteraction_);
         fixedLSParticleInteraction_.copyFromHost(other.fixedLSParticleInteraction_);
-        BondedParticleInteraction_.copyFromHost(other.BondedParticleInteraction_);
+        VBondedInteraction_.copyFromHost(other.VBondedInteraction_);
 
         stream_ = other.stream_;
         maxGPUThread_ = other.maxGPUThread_;
-        deviceID_ = other.deviceID_;
     }
 
 protected:
@@ -272,9 +292,21 @@ protected:
 
     LSParticleInteraction& getLSParticleInteraction() { return LSParticleInteraction_; }
 
-    BondedParticleInteraction& getBondedParticleInteraction() { return BondedParticleInteraction_; }
+    VBondedInteraction& getBondedInteraction() { return VBondedInteraction_; }
 
 private:
+    void activateGPUDevice(const int device)
+    {
+        cudaError_t cudaStatus = cudaSetDevice(device);
+        if (cudaStatus != cudaSuccess) 
+        {
+            std::cout << "cudaSetDevice( " << device 
+            << " ) failed! Do you have a CUDA-capable GPU installed?" 
+            << std::endl; 
+            exit(1); 
+        }
+    }
+
     inline std::filesystem::path getBuildDirectoryFromExecutable(const char* argv0)
     {
         if (argv0 == nullptr) return std::filesystem::current_path();
@@ -330,18 +362,6 @@ private:
         removeVtuFiles(dir4);
     }
 
-    void activateGPUDevice()
-    {
-        cudaError_t cudaStatus = cudaSetDevice(deviceID_);
-        if (cudaStatus != cudaSuccess) 
-        {
-            std::cout << "cudaSetDevice( " << deviceID_
-            << " ) failed! Do you have a CUDA-capable GPU installed?"
-            << std::endl;
-            exit(1);
-        }
-    }
-
     void upload(const double3 minDomain, const double3 maxDomain)
     {
         LSParticle_.initialize(minDomain, 
@@ -365,7 +385,7 @@ private:
             stream_);
         }
 
-        if (BondedParticleInteraction_.numPair() > 0) BondedParticleInteraction_.initialize(maxGPUThread_, 
+        if (VBondedInteraction_.numPair() > 0) VBondedInteraction_.initialize(maxGPUThread_, 
         stream_);
     }
 
@@ -572,37 +592,40 @@ private:
         fixedLSParticleInteraction_.pairBlockDim(), 
         stream_);
 
-        launchAddLevelSetParticleBondedForceTorqueKernel(BondedParticleInteraction_.point(), 
-        BondedParticleInteraction_.normal(), 
-        BondedParticleInteraction_.shearForce(), 
-        BondedParticleInteraction_.bendingTorque(), 
-        BondedParticleInteraction_.normalForce(), 
-        BondedParticleInteraction_.torsionTorque(), 
-        BondedParticleInteraction_.maxNormalStress(), 
-        BondedParticleInteraction_.maxShearStress(), 
-        BondedParticleInteraction_.isBonded(), 
-        BondedParticleInteraction_.normalStiffness(), 
-        BondedParticleInteraction_.torsionStiffness(), 
-        BondedParticleInteraction_.shearStiffness(), 
-        BondedParticleInteraction_.bendingStiffness(), 
-        BondedParticleInteraction_.radius(), 
-        BondedParticleInteraction_.tensileStrength(), 
-        BondedParticleInteraction_.cohesion(), 
-        BondedParticleInteraction_.frictionCoefficient(), 
-        BondedParticleInteraction_.endPointALocalPosition(), 
-        BondedParticleInteraction_.endPointBLocalPosition(), 
-        BondedParticleInteraction_.masterParticleID(), 
-        BondedParticleInteraction_.slaveParticleID(), 
+        launchAddLevelSetParticleBondedForceTorque(VBondedInteraction_.point(), 
+        VBondedInteraction_.maxNormalStress(), 
+        VBondedInteraction_.maxShearStress(), 
+        VBondedInteraction_.Un(), 
+        VBondedInteraction_.Us(), 
+        VBondedInteraction_.Ub(), 
+        VBondedInteraction_.Ut(), 
+        VBondedInteraction_.activated(), 
+        VBondedInteraction_.B1(), 
+        VBondedInteraction_.B2(), 
+        VBondedInteraction_.B3(), 
+        VBondedInteraction_.B4(), 
+        VBondedInteraction_.radius(), 
+        VBondedInteraction_.initialLength(), 
+        VBondedInteraction_.tensileStrength(), 
+        VBondedInteraction_.cohesion(), 
+        VBondedInteraction_.frictionCoefficient(), 
+        VBondedInteraction_.masterVBondPointLocalVectorN1(), 
+        VBondedInteraction_.masterVBondPointLocalVectorN2(), 
+        VBondedInteraction_.masterVBondPointLocalVectorN3(), 
+        VBondedInteraction_.masterVBondPointLocalPosition(), 
+        VBondedInteraction_.slaveVBondPointLocalVectorN1(), 
+        VBondedInteraction_.slaveVBondPointLocalVectorN2(), 
+        VBondedInteraction_.slaveVBondPointLocalVectorN3(), 
+        VBondedInteraction_.slaveVBondPointLocalPosition(), 
+        VBondedInteraction_.masterObjectID(), 
+        VBondedInteraction_.slaveObjectID(), 
         LSParticle_.force(), 
         LSParticle_.torque(), 
         LSParticle_.position(), 
-        LSParticle_.velocity(), 
-        LSParticle_.angularVelocity(), 
         LSParticle_.orientation(), 
-        timeStep, 
-        BondedParticleInteraction_.numPair_device(), 
-        BondedParticleInteraction_.gridDim(), 
-        BondedParticleInteraction_.blockDim(), 
+        VBondedInteraction_.numPair_device(), 
+        VBondedInteraction_.gridDim(), 
+        VBondedInteraction_.blockDim(), 
         stream_);
     }
 
@@ -656,9 +679,8 @@ private:
         stream_);
     }
 
-    void simulateOneStep(size_t& iStep, double& time, const double3 gravity, const double halfTimeStep)
+    void simulateOneStep(double& time, const double3 gravity, const double halfTimeStep)
     {
-        iStep += 1;
         updateSpatialGrid();
         buildLSParticleInteraction();
         calLSParticleContactForceTorque(halfTimeStep);
@@ -681,7 +703,7 @@ private:
             fixedLSParticle_.finalize(stream_);
             fixedLSParticleInteraction_.finalize(stream_);
         }
-        if (BondedParticleInteraction_.numPair_device() > 0) BondedParticleInteraction_.finalize(stream_);
+        if (VBondedInteraction_.numPair_device() > 0) VBondedInteraction_.finalize(stream_);
     }
 
     void output(const std::string &outputDir, const size_t iFrame, const size_t iStep, const double time)
@@ -705,7 +727,7 @@ private:
         LSParticle_.normalStiffnessHostRef(),
         LSParticle_.shearStiffnessHostRef(),
         dir2, iFrame, iStep, time);
-        if (BondedParticleInteraction_.numPair() > 0) BondedParticleInteraction_.outputVTU(dir2, iFrame, iStep, time);
+        if (VBondedInteraction_.numPair() > 0) VBondedInteraction_.outputVTU(dir2, iFrame, iStep, time);
         if (fixedLSParticle_.num() > 0)
         {
             fixedLSParticle_.outputVTU_connectivity(dir3, iFrame, iStep, time);
@@ -724,9 +746,8 @@ private:
     LSParticle fixedLSParticle_;
     LSParticleInteraction LSParticleInteraction_;
     LSParticleInteraction fixedLSParticleInteraction_;
-    BondedParticleInteraction BondedParticleInteraction_;
+    VBondedInteraction VBondedInteraction_;
 
     cudaStream_t stream_;
-    size_t deviceID_;
     size_t maxGPUThread_;
 };

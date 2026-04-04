@@ -1,5 +1,4 @@
 #include "contactKernel.cuh"
-#include "myUtility/myVec.h"
 
 /**
  * @brief Atomic add for double on device. Uses native atomicAdd on sm_60+; CAS loop otherwise.
@@ -98,7 +97,7 @@ const size_t numPair)
 	const double mu = fmin(mu_i, mu_j);
 	double3 F_c = make_double3(0., 0., 0.);
 	double3 epsilon_s = slidingSpring[k];
-	LinearContactForLevelSetParticle(F_c, epsilon_s, 
+	LinearContact(F_c, epsilon_s, 
 	v_c_ij, w_ij, n_ij, delta, dt, 
 	kn, ks, mu);
 
@@ -170,7 +169,7 @@ const size_t numPair)
 	const double mu = fmin(mu_i, mu_j);
 	double3 F_c = make_double3(0., 0., 0.);
 	double3 epsilon_s = slidingSpring[k];
-	LinearContactForLevelSetParticle(F_c, epsilon_s, 
+	LinearContact(F_c, epsilon_s, 
 	v_c_ij, w_ij, n_ij, delta, dt, 
 	kn, ks, mu);
 	
@@ -180,37 +179,40 @@ const size_t numPair)
 }
 
 __global__ void addLevelSetParticleBondedForceTorqueKernel(double3* bondPoint,
-double3* bondNormal,
-double3* shearForce, 
-double3* bendingTorque,
-double* normalForce, 
-double* torsionTorque, 
-double* maxNormalStress,
+double* maxNormalStress, 
 double* maxShearStress,
+double* Un, 
+double* Us, 
+double* Ub,
+double* Ut,
 int* isBonded, 
 
 double3* force_p, 
 double3* torque_p, 
 
-const double* normalStiffness, 
-const double* torsionStiffness, 
-const double* shearStiffness, 
-const double* bendingStiffness, 
+const double* B1, 
+const double* B2, 
+const double* B3, 
+const double* B4, 
 const double* bondRadius,
+const double* bondInitialLength,
 const double* tensileStrength, 
 const double* cohesion, 
 const double* frictionCoefficient, 
-const double3* bondEndPointALocalPosition,
-const double3* bondEndPointBLocalPosition,
-const int* objectPointed_b,
-const int* objectPointing_b,
+const double3* masterVBondPointLocalVectorN1,
+const double3* masterVBondPointLocalVectorN2,
+const double3* masterVBondPointLocalVectorN3,
+const double3* masterVBondPointLocalPosition,
+const double3* slaveVBondPointLocalVectorN1,
+const double3* slaveVBondPointLocalVectorN2,
+const double3* slaveVBondPointLocalVectorN3,
+const double3* slaveVBondPointLocalPosition,
+const int* masterObjectID,
+const int* slaveObjectID,
 
-const double3* position_p, 
-const double3* velocity_p, 
-const double3* angularVelocity_p, 
+const double3* position_p,
 const quaternion* orientation_p,
 
-const double dt,
 const size_t numPair)
 {
 	const size_t k = blockIdx.x * blockDim.x + threadIdx.x;
@@ -218,69 +220,42 @@ const size_t numPair)
 
 	if (isBonded[k] == 0)
 	{
-		normalForce[k] = 0;
-		torsionTorque[k] = 0;
-		shearForce[k] = make_double3(0, 0, 0);
-		bendingTorque[k] = make_double3(0, 0, 0);
+		Un[k] = 0.;
+		Us[k] = 0.;
+		Ub[k] = 0.;
+		Ut[k] = 0.;
+		maxNormalStress[k] = 0.;
+		maxShearStress[k] = 0.;
 		return;
 	}
 
-	const int idx_i = objectPointed_b[k];
-	const int idx_j = objectPointing_b[k];
-	const double3 n_ij0 = bondNormal[k];
-
+	const int idx_i = masterObjectID[k];
+	const int idx_j = slaveObjectID[k];
     const double3 r_i = position_p[idx_i];
 	const double3 r_j = position_p[idx_j];
-	const double3 rb_i = rotateVectorByQuaternion(orientation_p[idx_i], bondEndPointALocalPosition[k]) + r_i;
-	const double3 rb_j = rotateVectorByQuaternion(orientation_p[idx_j], bondEndPointBLocalPosition[k]) + r_j;
-	const double3 r_c = 0.5 * (rb_i + rb_j);
-	const double3 n_ij = normalize(rb_i - rb_j);
-	const double3 v_i = velocity_p[idx_i];
-	const double3 v_j = velocity_p[idx_j];
-	const double3 w_i = angularVelocity_p[idx_i];
-	const double3 w_j = angularVelocity_p[idx_j];
-	const double3 v_c_ij = v_i + cross(w_i, r_c - r_i) - (v_j + cross(w_j, r_c - r_j));
+	const quaternion q_i = orientation_p[idx_i];
+	const quaternion q_j = orientation_p[idx_j];
+	const double3 rb_i = rotateVectorByQuaternion(q_i, masterVBondPointLocalPosition[k]) + r_i;
+	const double3 rb_j = rotateVectorByQuaternion(q_j, slaveVBondPointLocalPosition[k]) + r_j;
+	const double3 n1_i = rotateVectorByQuaternion(q_i, masterVBondPointLocalVectorN1[k]);
+	const double3 n2_i = rotateVectorByQuaternion(q_i, masterVBondPointLocalVectorN2[k]);
+	const double3 n3_i = rotateVectorByQuaternion(q_i, masterVBondPointLocalVectorN3[k]);
+	const double3 n1_j = rotateVectorByQuaternion(q_j, slaveVBondPointLocalVectorN1[k]);
+	const double3 n2_j = rotateVectorByQuaternion(q_j, slaveVBondPointLocalVectorN2[k]);
+	const double3 n3_j = rotateVectorByQuaternion(q_j, slaveVBondPointLocalVectorN3[k]);
 
-	bondPoint[k] = r_c;
-    if (!isZero(length(n_ij))) bondNormal[k] = n_ij;
+	double3 F_ij = make_double3(0., 0., 0.);
+	double3 M_ij = make_double3(0., 0., 0.);
+	double3 M_ji = make_double3(0., 0., 0.);
 
-	const double k_n = normalStiffness[k];
-    const double k_s = shearStiffness[k];
-    const double k_b = bendingStiffness[k];
-    const double k_t = torsionStiffness[k];
-	const double rad_b = bondRadius[k];
-	const double sigma_s = tensileStrength[k];
-	const double C = cohesion[k];
-	const double mu = frictionCoefficient[k];
+	isBonded[k] = VBond(F_ij, M_ij, M_ji, Un[k], Us[k], Ub[k], Ut[k], maxNormalStress[k],maxShearStress[k],
+	rb_i, rb_j, n1_i, n2_i, n3_i, n1_j, n2_j, n3_j, B1[k], B2[k], B3[k], B4[k], bondRadius[k], bondInitialLength[k], 
+	tensileStrength[k], cohesion[k], frictionCoefficient[k]);
 
-	double F_n = normalForce[k];
-	double3 F_s = shearForce[k];
-	double T_t = torsionTorque[k];
-	double3 T_b = bendingTorque[k];
-	double sigma_max = maxNormalStress[k];
-	double tau_max = maxShearStress[k];
-
-	isBonded[k] = ParallelBondedContactForLevelSetParticle(F_n, T_t, F_s, T_b, 
-	sigma_max, tau_max,
-	n_ij0, n_ij, 
-	v_c_ij, w_i, w_j, 
-	dt, 
-	rad_b, k_n, k_s, k_b, k_t, 
-	sigma_s, C, mu);
-
-	normalForce[k] = F_n;
-	shearForce[k] = F_s;
-	torsionTorque[k] = T_t;
-	bendingTorque[k] = T_b;
-	maxNormalStress[k] = sigma_max;
-	maxShearStress[k] = tau_max;
-
-    double3 F_c = F_n * n_ij + F_s;
-	double3 T_c = T_t * n_ij + T_b;
-	atomicAddDouble3(force_p, idx_i, F_c);
-	atomicAddDouble3(torque_p, idx_i, T_c + cross(r_c - r_i, F_c));
-	atomicAddDouble3(force_p, idx_j, -F_c);
-	atomicAddDouble3(torque_p, idx_j, -T_c + cross(r_c - r_j, -F_c));
+	atomicAddDouble3(force_p, idx_i, F_ij);
+	atomicAddDouble3(torque_p, idx_i, M_ij + cross(rb_i - r_i, F_ij));
+	atomicAddDouble3(force_p, idx_j, -F_ij);
+	atomicAddDouble3(torque_p, idx_j, M_ji + cross(rb_j - r_j, -F_ij));
 }
 
 extern "C" void launchAddLevelSetParticleContactForceTorque(double3* slidingSpring, 
@@ -399,73 +374,79 @@ cudaStream_t stream)
     numPair);
 }
 
-extern "C" void launchAddLevelSetParticleBondedForceTorqueKernel(double3* bondPoint,
-double3* bondNormal,
-double3* shearForce, 
-double3* bendingTorque,
-double* normalForce, 
-double* torsionTorque, 
+extern "C" void launchAddLevelSetParticleBondedForceTorque(
+double3* bondPoint,
 double* maxNormalStress,
 double* maxShearStress,
-int* isBonded, 
-const double* normalStiffness, 
-const double* torsionStiffness, 
-const double* shearStiffness, 
-const double* bendingStiffness, 
+double* Un,
+double* Us,
+double* Ub,
+double* Ut,
+int* isBonded,
+const double* B1,
+const double* B2,
+const double* B3,
+const double* B4,
 const double* bondRadius,
-const double* tensileStrength, 
-const double* cohesion, 
-const double* frictionCoefficient, 
-const double3* bondEndPointALocalPosition,
-const double3* bondEndPointBLocalPosition,
-const int* objectPointed_b,
-const int* objectPointing_b,
+const double* bondInitialLength,
+const double* tensileStrength,
+const double* cohesion,
+const double* frictionCoefficient,
+const double3* masterVBondPointLocalVectorN1,
+const double3* masterVBondPointLocalVectorN2,
+const double3* masterVBondPointLocalVectorN3,
+const double3* masterVBondPointLocalPosition,
+const double3* slaveVBondPointLocalVectorN1,
+const double3* slaveVBondPointLocalVectorN2,
+const double3* slaveVBondPointLocalVectorN3,
+const double3* slaveVBondPointLocalPosition,
+const int* masterObjectID,
+const int* slaveObjectID,
 
-double3* force_p, 
-double3* torque_p, 
-const double3* position_p, 
-const double3* velocity_p, 
-const double3* angularVelocity_p, 
+double3* force_p,
+double3* torque_p,
+const double3* position_p,
 const quaternion* orientation_p,
-
-const double timeStep,
 
 const size_t numPair,
 const size_t gridD,
 const size_t blockD,
 cudaStream_t stream)
 {
-	addLevelSetParticleBondedForceTorqueKernel<<<gridD, blockD, 0, stream>>>(bondPoint,
-	bondNormal,
-	shearForce, 
-	bendingTorque,
-	normalForce, 
-	torsionTorque, 
-	maxNormalStress,
-	maxShearStress,
-	isBonded, 
+    addLevelSetParticleBondedForceTorqueKernel<<<gridD, blockD, 0, stream>>>(bondPoint,
+    maxNormalStress,
+    maxShearStress,
+    Un,
+    Us,
+    Ub,
+    Ut,
+    isBonded,
 
-	force_p, 
-	torque_p, 
+    force_p,
+    torque_p,
 
-	normalStiffness, 
-	torsionStiffness, 
-	shearStiffness, 
-	bendingStiffness, 
-	bondRadius,
-	tensileStrength, 
-	cohesion, 
-	frictionCoefficient, 
-	bondEndPointALocalPosition,
-	bondEndPointBLocalPosition,
-	objectPointed_b,
-	objectPointing_b,
+    B1,
+    B2,
+    B3,
+    B4,
+    bondRadius,
+    bondInitialLength,
+    tensileStrength,
+    cohesion,
+    frictionCoefficient,
+    masterVBondPointLocalVectorN1,
+    masterVBondPointLocalVectorN2,
+    masterVBondPointLocalVectorN3,
+    masterVBondPointLocalPosition,
+    slaveVBondPointLocalVectorN1,
+    slaveVBondPointLocalVectorN2,
+    slaveVBondPointLocalVectorN3,
+    slaveVBondPointLocalPosition,
+    masterObjectID,
+    slaveObjectID,
 
-	position_p, 
-	velocity_p, 
-	angularVelocity_p, 
-	orientation_p,
+    position_p,
+    orientation_p,
 
-	timeStep,
-	numPair);
+    numPair);
 }

@@ -3,7 +3,6 @@
 #include "CUDAKernelFunction/myUtility/myMat.h"
 #include "CUDAKernelFunction/myUtility/mySpatialGrid.h"
 #include "CUDAKernelFunction/myUtility/myFileEdit.h"
-#include "myVec.h"
 #include <algorithm>
 #include <cstdint>
 #include <fstream>
@@ -356,7 +355,7 @@ public:
         upload_ = true;
     }
 
-    void outputVTU(const std::string& dir, const size_t iFrame, const size_t iStep, const double time)
+    void outputVTU(const std::string& dir, const size_t iFrame, const size_t iStep, const double time) const
     {
         MKDIR(dir.c_str());
 
@@ -507,7 +506,7 @@ public:
         out << "\n  </AppendedData>\n</VTKFile>\n";
     }
 
-    void outputVTU_connectivity(const std::string& dir, const size_t iFrame, const size_t iStep, const double time)
+    void outputVTU_connectivity(const std::string& dir, const size_t iFrame, const size_t iStep, const double time) const
     {
         if (LSBoundaryNodeConnectivity_.empty()) return;
 
@@ -757,8 +756,6 @@ public:
     LSBoundaryNode LSBoundaryNode_;
     spatialGrid spatialGrid_;
 
-    std::vector<int3> LSBoundaryNodeConnectivity_;
-
 private:
     void copyHostToDevice(cudaStream_t stream)
     {
@@ -822,4 +819,6 @@ private:
     size_t blockDim_{1};
 
     bool upload_{false};
+
+    std::vector<int3> LSBoundaryNodeConnectivity_;
 };

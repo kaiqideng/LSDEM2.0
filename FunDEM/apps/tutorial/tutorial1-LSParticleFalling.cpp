@@ -3,7 +3,6 @@
 #include "kernel/helper/SpherePackingGenerator.h"
 #include "kernel/helper/OBJLoader.h"
 #include "globalDamping.cuh"
-#include "myVec.h"
 
 inline quaternion randomQuaternionUniform_deterministic()
 {
