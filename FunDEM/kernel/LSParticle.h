@@ -357,6 +357,8 @@ public:
 
     void outputVTU(const std::string& dir, const size_t iFrame, const size_t iStep, const double time) const
     {
+        if (num() == 0) return;
+        
         MKDIR(dir.c_str());
 
         std::ostringstream fname;

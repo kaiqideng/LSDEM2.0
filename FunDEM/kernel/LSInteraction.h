@@ -18,7 +18,7 @@ public:
     void initialize(const LSParticle& LSP, const size_t maxGPUThread, cudaStream_t stream)
     {
         const size_t numBoundaryNode = LSP.LSBoundaryNode_.num();
-        if (numBoundaryNode < boundaryNodeNeighborPrefixSum_.hostSize()) return;
+        if (numBoundaryNode == 0 || numBoundaryNode < boundaryNodeNeighborPrefixSum_.hostSize()) return;
         boundaryNodeNeighborCount_.allocateDevice(numBoundaryNode, stream);
         boundaryNodeNeighborPrefixSum_.allocateDevice(numBoundaryNode, stream);
         boundaryNodeNeighborPrefixSum0_.allocateDevice(numBoundaryNode, stream);

@@ -294,6 +294,94 @@ protected:
 
     VBondedInteraction& getBondedInteraction() { return VBondedInteraction_; }
 
+    void removeFiles(const std::string outputDir)
+    {
+        const std::string dir1 = outputDir + "/Particle";
+        const std::string dir2 = outputDir + "/ParticleInteraction";
+        const std::string dir3 = outputDir + "/Wall";
+        const std::string dir4 = outputDir + "/Particle-WallInteraction";
+        MKDIR(outputDir.c_str());
+        removeVtuFiles(dir1);
+        removeVtuFiles(dir2);
+        removeVtuFiles(dir3);
+        removeVtuFiles(dir4);
+    }
+
+    void upload(const double3 minDomain, const double3 maxDomain)
+    {
+        LSParticle_.initialize(minDomain, maxDomain, maxGPUThread_, stream_);
+        LSParticleInteraction_.initialize(LSParticle_, maxGPUThread_, stream_);
+        fixedLSParticle_.initialize(minDomain, maxDomain, maxGPUThread_, stream_);
+        fixedLSParticleInteraction_.initialize(LSParticle_, maxGPUThread_, stream_);
+        VBondedInteraction_.initialize(maxGPUThread_, stream_);
+    }
+
+    void simulateOneStep(double& time, const double3 gravity, const double halfTimeStep)
+    {
+        updateSpatialGrid();
+        buildLSParticleInteraction();
+        calLSParticleContactForceTorque(halfTimeStep);
+        time += halfTimeStep;
+        addExternalForceTorque(time);
+        integration1stHalf(gravity, halfTimeStep);
+        buildLSParticleInteraction();
+        calLSParticleContactForceTorque(halfTimeStep);
+        time += halfTimeStep;
+        addExternalForceTorque(time);
+        integration2ndHalf(gravity, halfTimeStep);
+    }
+
+    void download()
+    {
+        LSParticle_.finalize(stream_);
+        LSParticleInteraction_.finalize(stream_);
+        fixedLSParticle_.finalize(stream_);
+        fixedLSParticleInteraction_.finalize(stream_);
+        VBondedInteraction_.finalize(stream_);
+    }
+
+    void output(const std::string &outputDir, const size_t iFrame, const size_t iStep, const double time)
+    {
+        std::cout << "[Solver] ------ Frame " << iFrame << " at Time " << time << " ------ " << std::endl;
+
+        std::cout << "[Solver] Downloading..." << std::endl;
+
+        download();
+        
+        std::cout << "[Solver] Download Completed" << std::endl;
+
+        std::cout << "[Solver] Outputting... " << std::endl;
+
+        const std::string dir1 = outputDir + "/Particle";
+        const std::string dir2 = outputDir + "/ParticleInteraction";
+        const std::string dir3 = outputDir + "/Wall";
+        const std::string dir4 = outputDir + "/Particle-WallInteraction";
+        MKDIR(outputDir.c_str());
+
+        LSParticle_.outputVTU(dir1, iFrame, iStep, time);
+        LSParticle_.outputVTU_connectivity(dir1, iFrame, iStep, time);
+
+        LSParticleInteraction_.outputVTU(LSParticle_.LSBoundaryNode_.particleIDHostRef(), 
+        LSParticle_.normalStiffnessHostRef(),
+        LSParticle_.shearStiffnessHostRef(),
+        LSParticle_.normalStiffnessHostRef(),
+        LSParticle_.shearStiffnessHostRef(),
+        dir2, iFrame, iStep, time);
+
+        VBondedInteraction_.outputVTU(dir2, iFrame, iStep, time);
+
+        fixedLSParticle_.outputVTU_connectivity(dir3, iFrame, iStep, time);
+        
+        fixedLSParticleInteraction_.outputVTU(LSParticle_.LSBoundaryNode_.particleIDHostRef(), 
+        LSParticle_.normalStiffnessHostRef(),
+        LSParticle_.shearStiffnessHostRef(),
+        fixedLSParticle_.normalStiffnessHostRef(),
+        fixedLSParticle_.shearStiffnessHostRef(),
+        dir4, iFrame, iStep, time);
+
+        std::cout << "[Solver] Output Completed" << std::endl;
+    }
+
 private:
     void activateGPUDevice(const int device)
     {
@@ -347,46 +435,6 @@ private:
             : getBuildDirectoryFromExecutable(argv0) / p;
 
         return resolvedPath.string();
-    }
-
-    void removeFiles(const std::string outputDir)
-    {
-        const std::string dir1 = outputDir + "/Particle";
-        const std::string dir2 = outputDir + "/ParticleInteraction";
-        const std::string dir3 = outputDir + "/Wall";
-        const std::string dir4 = outputDir + "/Particle-WallInteraction";
-        MKDIR(outputDir.c_str());
-        removeVtuFiles(dir1);
-        removeVtuFiles(dir2);
-        removeVtuFiles(dir3);
-        removeVtuFiles(dir4);
-    }
-
-    void upload(const double3 minDomain, const double3 maxDomain)
-    {
-        LSParticle_.initialize(minDomain, 
-        maxDomain, 
-        maxGPUThread_, 
-        stream_);
-
-        LSParticleInteraction_.initialize(LSParticle_, 
-        maxGPUThread_, 
-        stream_);
-
-        if (fixedLSParticle_.num() > 0) 
-        {
-            fixedLSParticle_.initialize(minDomain, 
-            maxDomain, 
-            maxGPUThread_, 
-            stream_);
-
-            fixedLSParticleInteraction_.initialize(LSParticle_, 
-            maxGPUThread_, 
-            stream_);
-        }
-
-        if (VBondedInteraction_.numPair() > 0) VBondedInteraction_.initialize(maxGPUThread_, 
-        stream_);
     }
 
     void updateSpatialGrid()
@@ -679,69 +727,6 @@ private:
         stream_);
     }
 
-    void simulateOneStep(double& time, const double3 gravity, const double halfTimeStep)
-    {
-        updateSpatialGrid();
-        buildLSParticleInteraction();
-        calLSParticleContactForceTorque(halfTimeStep);
-        time += halfTimeStep;
-        addExternalForceTorque(time);
-        integration1stHalf(gravity, halfTimeStep);
-        buildLSParticleInteraction();
-        calLSParticleContactForceTorque(halfTimeStep);
-        time += halfTimeStep;
-        addExternalForceTorque(time);
-        integration2ndHalf(gravity, halfTimeStep);
-    }
-
-    void download()
-    {
-        LSParticle_.finalize(stream_);
-        LSParticleInteraction_.finalize(stream_);
-        if (fixedLSParticle_.num_device() > 0)
-        {
-            fixedLSParticle_.finalize(stream_);
-            fixedLSParticleInteraction_.finalize(stream_);
-        }
-        if (VBondedInteraction_.numPair_device() > 0) VBondedInteraction_.finalize(stream_);
-    }
-
-    void output(const std::string &outputDir, const size_t iFrame, const size_t iStep, const double time)
-    {
-        std::cout << "[Solver] ------ Frame " << iFrame << " at Time " << time << " ------ " << std::endl;
-        std::cout << "[Solver] Downloading..." << std::endl;
-        download();
-        std::cout << "[Solver] Download Completed" << std::endl;
-
-        std::cout << "[Solver] Outputting... " << std::endl;
-        const std::string dir1 = outputDir + "/Particle";
-        const std::string dir2 = outputDir + "/ParticleInteraction";
-        const std::string dir3 = outputDir + "/Wall";
-        const std::string dir4 = outputDir + "/Particle-WallInteraction";
-        MKDIR(outputDir.c_str());
-        LSParticle_.outputVTU(dir1, iFrame, iStep, time);
-        LSParticle_.outputVTU_connectivity(dir1, iFrame, iStep, time);
-        LSParticleInteraction_.outputVTU(LSParticle_.LSBoundaryNode_.particleIDHostRef(), 
-        LSParticle_.normalStiffnessHostRef(),
-        LSParticle_.shearStiffnessHostRef(),
-        LSParticle_.normalStiffnessHostRef(),
-        LSParticle_.shearStiffnessHostRef(),
-        dir2, iFrame, iStep, time);
-        if (VBondedInteraction_.numPair() > 0) VBondedInteraction_.outputVTU(dir2, iFrame, iStep, time);
-        if (fixedLSParticle_.num() > 0)
-        {
-            fixedLSParticle_.outputVTU_connectivity(dir3, iFrame, iStep, time);
-            fixedLSParticleInteraction_.outputVTU(LSParticle_.LSBoundaryNode_.particleIDHostRef(), 
-            LSParticle_.normalStiffnessHostRef(),
-            LSParticle_.shearStiffnessHostRef(),
-            fixedLSParticle_.normalStiffnessHostRef(),
-            fixedLSParticle_.shearStiffnessHostRef(),
-            dir4, iFrame, iStep, time);
-        }
-        std::cout << "[Solver] Output Completed" << std::endl;
-    }
-
-private:
     LSParticle LSParticle_;
     LSParticle fixedLSParticle_;
     LSParticleInteraction LSParticleInteraction_;
