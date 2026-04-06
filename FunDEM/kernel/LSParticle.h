@@ -155,9 +155,7 @@ public:
             return;
         }
 
-        const size_t expectedNumGridNodes =
-            size_t(gridNodeSize.x) * size_t(gridNodeSize.y) * size_t(gridNodeSize.z);
-
+        const size_t expectedNumGridNodes = size_t(gridNodeSize.x) * size_t(gridNodeSize.y) * size_t(gridNodeSize.z);
         if (expectedNumGridNodes != gridNodeLevelSetFunctionValue.size())
         {
             std::cerr << "[LSParticle] Inconsistent level-set host data size. "
@@ -376,7 +374,6 @@ public:
 
         std::vector<float> points;
         std::vector<float> vel;
-        std::vector<float> angVel;
         std::vector<int32_t> pid;
         std::vector<int32_t> conn;
         std::vector<int32_t> offs;
@@ -384,7 +381,6 @@ public:
 
         points.resize(N * 3);
         vel.resize(N * 3);
-        angVel.resize(N * 3);
         pid.resize(N);
         conn.resize(N);
         offs.resize(N);
@@ -403,17 +399,12 @@ public:
                 vel[3 * i + 1] = 0.f;
                 vel[3 * i + 2] = 0.f;
 
-                angVel[3 * i + 0] = 0.f;
-                angVel[3 * i + 1] = 0.f;
-                angVel[3 * i + 2] = 0.f;
-
                 pid[i] = -1;
             }
             else
             {
                 const double3 pw = p_p[p] + rotateVectorByQuaternion(q_p[p], pLocal[i]);
                 const double3 vw = v_p[p] + cross(w_p[p], pw - p_p[p]);
-                const double3 ww = w_p[p];
 
                 points[3 * i + 0] = static_cast<float>(pw.x);
                 points[3 * i + 1] = static_cast<float>(pw.y);
@@ -422,10 +413,6 @@ public:
                 vel[3 * i + 0] = static_cast<float>(vw.x);
                 vel[3 * i + 1] = static_cast<float>(vw.y);
                 vel[3 * i + 2] = static_cast<float>(vw.z);
-
-                angVel[3 * i + 0] = static_cast<float>(ww.x);
-                angVel[3 * i + 1] = static_cast<float>(ww.y);
-                angVel[3 * i + 2] = static_cast<float>(ww.z);
 
                 pid[i] = static_cast<int32_t>(p);
             }
@@ -449,7 +436,6 @@ public:
 
         size_t off_pid = off_types + blockBytes(types.size() * sizeof(uint8_t));
         size_t off_vel = off_pid + blockBytes(pid.size() * sizeof(int32_t));
-        size_t off_angVel = off_vel + blockBytes(vel.size() * sizeof(float));
 
         std::ofstream out(fname.str(), std::ios::binary);
         if (!out) throw std::runtime_error("Cannot open " + fname.str());
@@ -472,9 +458,8 @@ public:
             << "        <DataArray type=\"UInt8\" Name=\"types\" format=\"appended\" offset=\"" << off_types << "\"/>\n"
             << "      </Cells>\n"
             << "      <PointData>\n"
-            << "        <DataArray type=\"Int32\" Name=\"particle ID\" format=\"appended\" offset=\"" << off_pid << "\"/>\n"
+            << "        <DataArray type=\"Int32\" Name=\"particleID\" format=\"appended\" offset=\"" << off_pid << "\"/>\n"
             << "        <DataArray type=\"Float32\" Name=\"velocity\" NumberOfComponents=\"3\" format=\"appended\" offset=\"" << off_vel << "\"/>\n"
-            << "        <DataArray type=\"Float32\" Name=\"angular velocity\" NumberOfComponents=\"3\" format=\"appended\" offset=\"" << off_angVel << "\"/>\n"
             << "      </PointData>\n"
             << "    </Piece>\n"
             << "  </UnstructuredGrid>\n"
@@ -503,14 +488,13 @@ public:
         writeBlock(types.data(), types.size() * sizeof(uint8_t));
         writeBlock(pid.data(), pid.size() * sizeof(int32_t));
         writeBlock(vel.data(), vel.size() * sizeof(float));
-        writeBlock(angVel.data(), angVel.size() * sizeof(float));
 
         out << "\n  </AppendedData>\n</VTKFile>\n";
     }
 
     void outputVTU_connectivity(const std::string& dir, const size_t iFrame, const size_t iStep, const double time) const
     {
-        if (LSBoundaryNodeConnectivity_.empty()) return;
+        if (num() == 0 || LSBoundaryNodeConnectivity_.empty()) return;
 
         MKDIR(dir.c_str());
 
@@ -586,7 +570,7 @@ public:
                 static_cast<size_t>(tri.y) >= N ||
                 static_cast<size_t>(tri.z) >= N)
             {
-                std::cerr << "[outputVTU] Invalid triangle index at triangle "
+                std::cerr << "[LSParticle] Invalid triangle index at triangle "
                         << i << std::endl;
                 out << "          0 0 0\n";
                 continue;
@@ -620,7 +604,7 @@ public:
         // -------------------------------------------------------------------------
         out << "      <PointData Vectors=\"velocity\">\n";
 
-        out << "        <DataArray type=\"Int32\" Name=\"particle ID\" format=\"ascii\">\n";
+        out << "        <DataArray type=\"Int32\" Name=\"particleID\" format=\"ascii\">\n";
         for (size_t i = 0; i < N; ++i)
         {
             out << "          " << static_cast<int32_t>(pID[i]) << "\n";
@@ -648,25 +632,6 @@ public:
                 << static_cast<float>(vw.x) << " "
                 << static_cast<float>(vw.y) << " "
                 << static_cast<float>(vw.z) << "\n";
-        }
-        out << "        </DataArray>\n";
-
-        out << "        <DataArray type=\"Float32\" Name=\"angular velocity\" NumberOfComponents=\"3\" format=\"ascii\">\n";
-        for (size_t i = 0; i < N; ++i)
-        {
-            const int p = pID[i];
-
-            double3 ww = make_double3(0.0, 0.0, 0.0);
-
-            if (p >= 0 && static_cast<size_t>(p) < w_p.size())
-            {
-                ww = w_p[p];
-            }
-
-            out << "          "
-                << static_cast<float>(ww.x) << " "
-                << static_cast<float>(ww.y) << " "
-                << static_cast<float>(ww.z) << "\n";
         }
         out << "        </DataArray>\n";
 

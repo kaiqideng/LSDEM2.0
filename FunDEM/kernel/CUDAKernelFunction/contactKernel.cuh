@@ -190,6 +190,8 @@ const double bondFrictionCoefficient)
 }
 
 extern "C" void launchAddLevelSetParticleContactForceTorque(double3* slidingSpring, 
+double* normalElasticEnergy, 
+double* slidingElasticEnergy, 
 const double3* contactPoint, 
 const double3* contactNormal,
 const double* overlap,
@@ -216,6 +218,8 @@ const size_t blockD,
 cudaStream_t stream);
 
 extern "C" void launchAddFixedLevelSetParticleContactForceTorque(double3* slidingSpring, 
+double* normalElasticEnergy, 
+double* slidingElasticEnergy, 
 const double3* contactPoint, 
 const double3* contactNormal,
 const double* overlap,

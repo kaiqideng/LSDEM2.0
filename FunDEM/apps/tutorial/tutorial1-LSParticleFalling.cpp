@@ -27,7 +27,7 @@ class solver:
     public LSSolver
 {
 public:
-    solver(): LSSolver(0) {}
+    solver(): LSSolver("tutorial1") {}
 
     double dampingCoefficient = 0.2;
 
@@ -107,8 +107,7 @@ int main(const int argc, char** argv)
     make_double3(0., 0., -9.81), 
     1.e-4, 
     5., 
-    50, 
-    "tutorial1",
+    50,
     argc,
     argv);
 }

@@ -2,6 +2,7 @@
 #include "CUDAKernelFunction/myUtility/myHostDeviceArray.h"
 #include "CUDAKernelFunction/myUtility/myQua.h"
 #include "CUDAKernelFunction/myUtility/myFileEdit.h"
+#include "CUDAKernelFunction/myUtility/myVec.h"
 #include <cstdint>
 #include <fstream>
 
@@ -91,9 +92,31 @@ public:
     
     cudaStream_t stream)
     {
-        if (isZero(length(globalNormal))) return;
-        if (isZero(radius)) return;
-        if (isZero(initialLength)) return;
+        if (isZero(lengthSquared(globalNormal)))
+        {
+            std::cerr << "[VBondedInteraction] Invalid bond normal: ("
+            << globalNormal.x << ", "
+            << globalNormal.y << ", "
+            << globalNormal.z << ")."
+            << std::endl;
+            return;
+        }
+
+        if (isZero(radius))
+        {
+            std::cerr << "[VBondedInteraction] Invalid bond radius: "
+            << radius << "."
+            << std::endl;
+            return;
+        }
+
+        if (isZero(initialLength))
+        {
+            std::cerr << "[VBondedInteraction] Invalid bond length: "
+            << initialLength << "."
+            << std::endl;
+            return;
+        }
 
         if (upload_) 
         {

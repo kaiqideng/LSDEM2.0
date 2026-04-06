@@ -1,4 +1,5 @@
 #include "contactKernel.cuh"
+#include "myVec.h"
 
 /**
  * @brief Atomic add for double on device. Uses native atomicAdd on sm_60+; CAS loop otherwise.
@@ -44,6 +45,8 @@ __device__ void atomicAddDouble3(double3* arr, size_t idx, const double3& v)
 }
 
 __global__ void addLevelSetParticleContactForceTorqueKernel(double3* slidingSpring, 
+double* normalElasticEnergy,
+double* slidingElasticEnergy,
 double3* force_p,
 double3* torque_p,
 
@@ -69,8 +72,7 @@ const size_t numPair)
     const size_t k = blockIdx.x * blockDim.x + threadIdx.x;
 	if (k >= numPair) return;
 
-    const size_t idx = boundaryNodePointed[k];
-	const int idx_i = particleID_bNode[idx];
+	const int idx_i = particleID_bNode[boundaryNodePointed[k]];
 	const double3 r_i = position_p[idx_i];
 	const double3 v_i = velocity_p[idx_i];
 	const double3 w_i = angularVelocity_p[idx_i];
@@ -102,6 +104,8 @@ const size_t numPair)
 	kn, ks, mu);
 
 	slidingSpring[k] = epsilon_s;
+	normalElasticEnergy[k] = 0.5 * delta * delta * kn;
+	slidingElasticEnergy[k] = 0.5 * lengthSquared(epsilon_s) * ks;
 	atomicAddDouble3(force_p, idx_i, F_c);
 	atomicAddDouble3(torque_p, idx_i, cross(r_c - r_i, F_c));
 	atomicAddDouble3(force_p, idx_j, -F_c);
@@ -109,6 +113,8 @@ const size_t numPair)
 }
 
 __global__ void addFixedLevelSetParticleContactForceTorqueKernel(double3* slidingSpring, 
+double* normalElasticEnergy,
+double* slidingElasticEnergy,
 double3* force_p,
 double3* torque_p,
 
@@ -141,8 +147,7 @@ const size_t numPair)
     const size_t k = blockIdx.x * blockDim.x + threadIdx.x;
 	if (k >= numPair) return;
 
-    const size_t idx = boundaryNodePointed[k];
-	const int idx_i = particleID_bNode[idx];
+	const int idx_i = particleID_bNode[boundaryNodePointed[k]];
 	const double3 r_i = position_p[idx_i];
 	const double3 v_i = velocity_p[idx_i];
 	const double3 w_i = angularVelocity_p[idx_i];
@@ -174,6 +179,8 @@ const size_t numPair)
 	kn, ks, mu);
 	
 	slidingSpring[k] = epsilon_s;
+	normalElasticEnergy[k] = 0.5 * delta * delta * kn;
+	slidingElasticEnergy[k] = 0.5 * lengthSquared(epsilon_s) * ks;
 	atomicAddDouble3(force_p, idx_i, F_c);
 	atomicAddDouble3(torque_p, idx_i, cross(r_c - r_i, F_c));
 }
@@ -261,6 +268,8 @@ const size_t numPair)
 }
 
 extern "C" void launchAddLevelSetParticleContactForceTorque(double3* slidingSpring, 
+double* normalElasticEnergy, 
+double* slidingElasticEnergy, 
 const double3* contactPoint, 
 const double3* contactNormal,
 const double* overlap,
@@ -287,6 +296,8 @@ const size_t blockD,
 cudaStream_t stream)
 {
     addLevelSetParticleContactForceTorqueKernel<<<gridD, blockD, 0, stream>>>(slidingSpring,
+	normalElasticEnergy, 
+	slidingElasticEnergy, 
     force_p,
     torque_p,
 
@@ -312,6 +323,8 @@ cudaStream_t stream)
 }
 
 extern "C" void launchAddFixedLevelSetParticleContactForceTorque(double3* slidingSpring, 
+double* normalElasticEnergy, 
+double* slidingElasticEnergy, 
 const double3* contactPoint, 
 const double3* contactNormal,
 const double* overlap,
@@ -345,6 +358,8 @@ const size_t blockD,
 cudaStream_t stream)
 {
     addFixedLevelSetParticleContactForceTorqueKernel<<<gridD, blockD, 0, stream>>>(slidingSpring,
+	normalElasticEnergy, 
+	slidingElasticEnergy, 
     force_p,
     torque_p,
 

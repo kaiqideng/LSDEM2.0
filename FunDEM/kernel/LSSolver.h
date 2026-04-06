@@ -1,5 +1,6 @@
-
-#include "LSInteraction.h"
+#pragma once
+#include "LSParticle.h"
+#include "SolidInteraction.h"
 #include "VBondedInteraction.h"
 #include "CUDAKernelFunction/LSParticleContactDetectionKernel.cuh"
 #include "CUDAKernelFunction/contactKernel.cuh"
@@ -9,10 +10,13 @@
 class LSSolver
 {
 public:
-    LSSolver(cudaStream_t stream, const size_t maxGPUThread = 256, const int device = 0)
+    LSSolver(const std::string dir, cudaStream_t stream = 0, const size_t maxGPUThread = 256, const int device = 0)
     {
+        dir_ = dir;
+        phase_ = 0;
         stream_ = stream;
         maxGPUThread_ = maxGPUThread;
+
         activateGPUDevice(device);
     }
 
@@ -151,15 +155,14 @@ public:
     {
         std::vector<double3> point = LSParticleInteraction_.contactPointHostCopy();
         std::vector<double3> normal = LSParticleInteraction_.contactNormalHostCopy();
-        std::vector<int> masterBoundaryNodeID = LSParticleInteraction_.masterBoundaryNodeIDHostCopy();
-        std::vector<int> slaveParticleID = LSParticleInteraction_.slaveParticleIDHostCopy();
-        const std::vector<int>& masterBoundaryNodeParticleID = LSParticle_.LSBoundaryNode_.particleIDHostRef();
+        std::vector<int> masterBoundaryNodeID = LSParticleInteraction_.masterIDHostCopy();
+        std::vector<int> slaveParticleID = LSParticleInteraction_.slaveIDHostCopy();
         std::vector<double3> position = LSParticle_.positionHostCopy();
         std::vector<quaternion> orientation = LSParticle_.orientationHostCopy();
 
         for(size_t k = 0; k < point.size(); k++)
         {
-            const int i = masterBoundaryNodeParticleID[masterBoundaryNodeID[k]];
+            const int i = LSParticle_.LSBoundaryNode_.particleIDHostRef()[masterBoundaryNodeID[k]];
             const int j = slaveParticleID[k];
             VBondedInteraction_.add(i, 
             j, 
@@ -180,6 +183,18 @@ public:
         }
     }
 
+    void activateGPUDevice(const int device)
+    {
+        cudaError_t cudaStatus = cudaSetDevice(device);
+        if (cudaStatus != cudaSuccess) 
+        {
+            std::cout << "cudaSetDevice( " << device 
+            << " ) failed! Do you have a CUDA-capable GPU installed?" 
+            << std::endl; 
+            exit(1); 
+        }
+    }
+
     /**
      * @brief Run the solver time integration loop.
      *
@@ -189,7 +204,6 @@ public:
      * @param timeStep Time step size.
      * @param maximumTime Maximum physical simulation time.
      * @param numFrame Requested number of output frames.
-     * @param outputDir Output directory.
      * @param argc Argument count from main().
      * @param argv Argument array from main().
      */
@@ -198,17 +212,17 @@ public:
     const double3 gravity, 
     const double timeStep, 
     const double maximumTime,
-    const size_t numFrame,
-    std::string outputDir, 
+    const size_t numFrame, 
     const int argc,
     char** argv)
     {
+        phase_ += 1;
+        std::string outputDir = dir_ + "_phase" + std::to_string(phase_);
         const char* argv0 = (argc > 0) ? argv[0] : nullptr;
         outputDir = resolveOutputDirFromBuild(outputDir, argv0);
         std::filesystem::create_directories(outputDir);
-        std::cout << "[Solver] Output: " << outputDir << std::endl;
-        std::cout << "[Solver] Uploading..." << std::endl;
 
+        std::cout << "[Solver] Uploading..." << std::endl;
         const double3 domainSize = maxDomain - minDomain;
         if (domainSize.x <= 0.0 || domainSize.y <= 0.0 || domainSize.z <= 0.0)
         {
@@ -228,7 +242,7 @@ public:
             return;
         }
 
-        if (maximumTime <= 0.0)
+        if (maximumTime < 0.0)
         {
             std::cerr << "[Solver] Invalid maximumTime: "
                     << maximumTime << "."
@@ -281,6 +295,8 @@ public:
         fixedLSParticleInteraction_.copyFromHost(other.fixedLSParticleInteraction_);
         VBondedInteraction_.copyFromHost(other.VBondedInteraction_);
 
+        dir_ = other.dir_;
+        phase_ = other.phase_;
         stream_ = other.stream_;
         maxGPUThread_ = other.maxGPUThread_;
     }
@@ -290,9 +306,13 @@ protected:
 
     LSParticle& getLSParticle() { return LSParticle_; }
 
-    LSParticleInteraction& getLSParticleInteraction() { return LSParticleInteraction_; }
+    LSParticle& getWall() { return fixedLSParticle_; }
 
-    VBondedInteraction& getBondedInteraction() { return VBondedInteraction_; }
+    SolidInteraction& getLSParticleInteraction() { return LSParticleInteraction_; }
+
+    SolidInteraction& getLSParticleWallInteraction() { return fixedLSParticleInteraction_; }
+
+    VBondedInteraction& getLSParticleBondedInteraction() { return VBondedInteraction_; }
 
     void removeFiles(const std::string outputDir)
     {
@@ -310,9 +330,9 @@ protected:
     void upload(const double3 minDomain, const double3 maxDomain)
     {
         LSParticle_.initialize(minDomain, maxDomain, maxGPUThread_, stream_);
-        LSParticleInteraction_.initialize(LSParticle_, maxGPUThread_, stream_);
+        LSParticleInteraction_.initialize(LSParticle_.LSBoundaryNode_.num(), maxGPUThread_, stream_);
         fixedLSParticle_.initialize(minDomain, maxDomain, maxGPUThread_, stream_);
-        fixedLSParticleInteraction_.initialize(LSParticle_, maxGPUThread_, stream_);
+        fixedLSParticleInteraction_.initialize(LSParticle_.LSBoundaryNode_.num(), maxGPUThread_, stream_);
         VBondedInteraction_.initialize(maxGPUThread_, stream_);
     }
 
@@ -345,13 +365,10 @@ protected:
         std::cout << "[Solver] ------ Frame " << iFrame << " at Time " << time << " ------ " << std::endl;
 
         std::cout << "[Solver] Downloading..." << std::endl;
-
         download();
-        
         std::cout << "[Solver] Download Completed" << std::endl;
 
         std::cout << "[Solver] Outputting... " << std::endl;
-
         const std::string dir1 = outputDir + "/Particle";
         const std::string dir2 = outputDir + "/ParticleInteraction";
         const std::string dir3 = outputDir + "/Wall";
@@ -360,41 +377,14 @@ protected:
 
         LSParticle_.outputVTU(dir1, iFrame, iStep, time);
         LSParticle_.outputVTU_connectivity(dir1, iFrame, iStep, time);
-
-        LSParticleInteraction_.outputVTU(LSParticle_.LSBoundaryNode_.particleIDHostRef(), 
-        LSParticle_.normalStiffnessHostRef(),
-        LSParticle_.shearStiffnessHostRef(),
-        LSParticle_.normalStiffnessHostRef(),
-        LSParticle_.shearStiffnessHostRef(),
-        dir2, iFrame, iStep, time);
-
+        LSParticleInteraction_.outputVTU(dir2, iFrame, iStep, time);
         VBondedInteraction_.outputVTU(dir2, iFrame, iStep, time);
-
         fixedLSParticle_.outputVTU_connectivity(dir3, iFrame, iStep, time);
-        
-        fixedLSParticleInteraction_.outputVTU(LSParticle_.LSBoundaryNode_.particleIDHostRef(), 
-        LSParticle_.normalStiffnessHostRef(),
-        LSParticle_.shearStiffnessHostRef(),
-        fixedLSParticle_.normalStiffnessHostRef(),
-        fixedLSParticle_.shearStiffnessHostRef(),
-        dir4, iFrame, iStep, time);
-
+        fixedLSParticleInteraction_.outputVTU(dir4, iFrame, iStep, time);
         std::cout << "[Solver] Output Completed" << std::endl;
     }
 
 private:
-    void activateGPUDevice(const int device)
-    {
-        cudaError_t cudaStatus = cudaSetDevice(device);
-        if (cudaStatus != cudaSuccess) 
-        {
-            std::cout << "cudaSetDevice( " << device 
-            << " ) failed! Do you have a CUDA-capable GPU installed?" 
-            << std::endl; 
-            exit(1); 
-        }
-    }
-
     inline std::filesystem::path getBuildDirectoryFromExecutable(const char* argv0)
     {
         if (argv0 == nullptr) return std::filesystem::current_path();
@@ -429,10 +419,7 @@ private:
     {
         const std::filesystem::path p(outputDirName);
 
-        const std::filesystem::path resolvedPath =
-            p.is_absolute()
-            ? p
-            : getBuildDirectoryFromExecutable(argv0) / p;
+        const std::filesystem::path resolvedPath = p.is_absolute() ? p : getBuildDirectoryFromExecutable(argv0) / p;
 
         return resolvedPath.string();
     }
@@ -474,7 +461,7 @@ private:
     {
         launchBuildLevelSetBoundaryNodeInteractions1st(LSParticle_.LSBoundaryNode_.localPosition(), 
         LSParticle_.LSBoundaryNode_.particleID(), 
-        LSParticleInteraction_.boundaryNodeNeighborCount(),
+        LSParticleInteraction_.masterNeighborCount(),
         LSParticle_.LSGridNode_.levelSetFunctionValue(), 
         LSParticle_.position(), 
         LSParticle_.orientation(), 
@@ -490,8 +477,8 @@ private:
         LSParticle_.spatialGrid_.inverseCellSize(), 
         LSParticle_.spatialGrid_.size3D(), 
         LSParticleInteraction_.numBoundaryNode_device(), 
-        LSParticleInteraction_.boundaryNodeGridDim(), 
-        LSParticleInteraction_.boundaryNodeBlockDim(), 
+        LSParticleInteraction_.masterGridDim(), 
+        LSParticleInteraction_.masterBlockDim(), 
         stream_);
 
         LSParticleInteraction_.save(maxGPUThread_, stream_);
@@ -500,14 +487,14 @@ private:
         LSParticleInteraction_.contactPoint(), 
         LSParticleInteraction_.contactNormal(), 
         LSParticleInteraction_.contactOverlap(), 
-        LSParticleInteraction_.masterBoundaryNodeID(), 
-        LSParticleInteraction_.slaveParticleID(), 
+        LSParticleInteraction_.masterID(), 
+        LSParticleInteraction_.slaveID(), 
         LSParticleInteraction_.previousSlidingSpring(), 
-        LSParticleInteraction_.previousSlaveParticleID(), 
+        LSParticleInteraction_.previousSlaveID(), 
         LSParticle_.LSBoundaryNode_.localPosition(), 
         LSParticle_.LSBoundaryNode_.particleID(), 
-        LSParticleInteraction_.boundaryNodeNeighborPrefixSum(), 
-        LSParticleInteraction_.previousBundaryNodeNeighborPrefixSum(), 
+        LSParticleInteraction_.masterNeighborPrefixSum(), 
+        LSParticleInteraction_.previousMasterNeighborPrefixSum(), 
         LSParticle_.LSGridNode_.levelSetFunctionValue(), 
         LSParticle_.position(), 
         LSParticle_.orientation(), 
@@ -523,13 +510,13 @@ private:
         LSParticle_.spatialGrid_.inverseCellSize(), 
         LSParticle_.spatialGrid_.size3D(), 
         LSParticleInteraction_.numBoundaryNode_device(), 
-        LSParticleInteraction_.boundaryNodeGridDim(), 
-        LSParticleInteraction_.boundaryNodeBlockDim(), 
+        LSParticleInteraction_.masterGridDim(), 
+        LSParticleInteraction_.masterBlockDim(), 
         stream_);
 
         launchBuildLevelSetBoundaryNodeFixedParticleInteractions1st(LSParticle_.LSBoundaryNode_.localPosition(), 
         LSParticle_.LSBoundaryNode_.particleID(), 
-        fixedLSParticleInteraction_.boundaryNodeNeighborCount(), 
+        fixedLSParticleInteraction_.masterNeighborCount(), 
         fixedLSParticle_.LSGridNode_.levelSetFunctionValue(), 
         LSParticle_.position(), 
         LSParticle_.orientation(), 
@@ -546,8 +533,8 @@ private:
         fixedLSParticle_.spatialGrid_.inverseCellSize(), 
         fixedLSParticle_.spatialGrid_.size3D(), 
         fixedLSParticleInteraction_.numBoundaryNode_device(), 
-        fixedLSParticleInteraction_.boundaryNodeGridDim(), 
-        fixedLSParticleInteraction_.boundaryNodeBlockDim(), 
+        fixedLSParticleInteraction_.masterGridDim(), 
+        fixedLSParticleInteraction_.masterBlockDim(), 
         stream_);
 
         fixedLSParticleInteraction_.save(maxGPUThread_, stream_);
@@ -556,14 +543,14 @@ private:
         fixedLSParticleInteraction_.contactPoint(), 
         fixedLSParticleInteraction_.contactNormal(), 
         fixedLSParticleInteraction_.contactOverlap(), 
-        fixedLSParticleInteraction_.masterBoundaryNodeID(), 
-        fixedLSParticleInteraction_.slaveParticleID(), 
+        fixedLSParticleInteraction_.masterID(), 
+        fixedLSParticleInteraction_.slaveID(), 
         fixedLSParticleInteraction_.previousSlidingSpring(), 
-        fixedLSParticleInteraction_.previousSlaveParticleID(), 
+        fixedLSParticleInteraction_.previousSlaveID(), 
         LSParticle_.LSBoundaryNode_.localPosition(), 
         LSParticle_.LSBoundaryNode_.particleID(), 
-        fixedLSParticleInteraction_.boundaryNodeNeighborPrefixSum(), 
-        fixedLSParticleInteraction_.previousBundaryNodeNeighborPrefixSum(), 
+        fixedLSParticleInteraction_.masterNeighborPrefixSum(), 
+        fixedLSParticleInteraction_.previousMasterNeighborPrefixSum(), 
         fixedLSParticle_.LSGridNode_.levelSetFunctionValue(), 
         LSParticle_.position(), 
         LSParticle_.orientation(), 
@@ -580,22 +567,24 @@ private:
         fixedLSParticle_.spatialGrid_.inverseCellSize(), 
         fixedLSParticle_.spatialGrid_.size3D(), 
         fixedLSParticleInteraction_.numBoundaryNode_device(), 
-        fixedLSParticleInteraction_.boundaryNodeGridDim(), 
-        fixedLSParticleInteraction_.boundaryNodeBlockDim(), 
+        fixedLSParticleInteraction_.masterGridDim(), 
+        fixedLSParticleInteraction_.masterBlockDim(), 
         stream_);
     }
 
-    void calLSParticleContactForceTorque(const double timeStep)
+    void calLSParticleContactForceTorque(const double halfTimeStep)
     {
         cudaMemsetAsync(LSParticle_.force(), 0, LSParticle_.num_device() * sizeof(double3), stream_);
         cudaMemsetAsync(LSParticle_.torque(), 0, LSParticle_.num_device() * sizeof(double3), stream_);
 
         launchAddLevelSetParticleContactForceTorque(LSParticleInteraction_.slidingSpring(), 
+        LSParticleInteraction_.normalElasticEnergy(),
+        LSParticleInteraction_.slidingElasticEnergy(),
         LSParticleInteraction_.contactPoint(),
         LSParticleInteraction_.contactNormal(), 
-        LSParticleInteraction_.contactOverlap(),
-        LSParticleInteraction_.masterBoundaryNodeID(), 
-        LSParticleInteraction_.slaveParticleID(), 
+        LSParticleInteraction_.contactOverlap(), 
+        LSParticleInteraction_.masterID(), 
+        LSParticleInteraction_.slaveID(), 
         LSParticle_.LSBoundaryNode_.localPosition(),
         LSParticle_.LSBoundaryNode_.particleID(), 
         LSParticle_.force(), 
@@ -606,18 +595,20 @@ private:
         LSParticle_.normalStiffness(),
         LSParticle_.shearStiffness(),
         LSParticle_.frictionCoefficient(),
-        timeStep, 
+        halfTimeStep, 
         LSParticleInteraction_.numPair_device(), 
         LSParticleInteraction_.pairGridDim(), 
         LSParticleInteraction_.pairBlockDim(), 
         stream_);
 
         launchAddFixedLevelSetParticleContactForceTorque(fixedLSParticleInteraction_.slidingSpring(), 
+        fixedLSParticleInteraction_.normalElasticEnergy(),
+        fixedLSParticleInteraction_.slidingElasticEnergy(),
         fixedLSParticleInteraction_.contactPoint(),
         fixedLSParticleInteraction_.contactNormal(), 
         fixedLSParticleInteraction_.contactOverlap(),
-        fixedLSParticleInteraction_.masterBoundaryNodeID(),
-        fixedLSParticleInteraction_.slaveParticleID(), 
+        fixedLSParticleInteraction_.masterID(),
+        fixedLSParticleInteraction_.slaveID(), 
         LSParticle_.LSBoundaryNode_.localPosition(),
         LSParticle_.LSBoundaryNode_.particleID(), 
         LSParticle_.force(), 
@@ -634,7 +625,7 @@ private:
         fixedLSParticle_.normalStiffness(),
         fixedLSParticle_.shearStiffness(),
         fixedLSParticle_.frictionCoefficient(),
-        timeStep, 
+        halfTimeStep, 
         fixedLSParticleInteraction_.numPair_device(), 
         fixedLSParticleInteraction_.pairGridDim(), 
         fixedLSParticleInteraction_.pairBlockDim(), 
@@ -679,8 +670,7 @@ private:
 
     void integration1stHalf(const double3 gravity, const double halfTimeStep)
     {
-        launchParticle1stHalfIntegration(LSParticle_.position(),
-        LSParticle_.velocity(),
+        launchParticleVelocityAngularVelocityIntegration(LSParticle_.velocity(),
         LSParticle_.angularVelocity(),
         LSParticle_.force(), 
         LSParticle_.torque(), 
@@ -694,16 +684,21 @@ private:
         LSParticle_.blockDim(),
         stream_);
 
-        launchParticle1stHalfIntegration(fixedLSParticle_.position(),
-        fixedLSParticle_.velocity(),
-        fixedLSParticle_.angularVelocity(),
-        fixedLSParticle_.force(), 
-        fixedLSParticle_.torque(), 
-        fixedLSParticle_.inverseMass(), 
+        launchParticlePositionOrientationIntegration(LSParticle_.position(), 
+        LSParticle_.orientation(), 
+        LSParticle_.velocity(),
+        LSParticle_.angularVelocity(), 
+        2. * halfTimeStep, 
+        LSParticle_.num_device(), 
+        LSParticle_.gridDim(), 
+        LSParticle_.blockDim(),
+        stream_);
+
+        launchParticlePositionOrientationIntegration(fixedLSParticle_.position(), 
         fixedLSParticle_.orientation(), 
-        fixedLSParticle_.inverseInertiaTensor(), 
-        gravity, 
-        halfTimeStep, 
+        fixedLSParticle_.velocity(),
+        fixedLSParticle_.angularVelocity(), 
+        2. * halfTimeStep, 
         fixedLSParticle_.num_device(), 
         fixedLSParticle_.gridDim(), 
         fixedLSParticle_.blockDim(),
@@ -712,7 +707,7 @@ private:
 
     void integration2ndHalf(const double3 gravity, const double halfTimeStep)
     {
-        launchParticle2ndHalfIntegration(LSParticle_.velocity(),
+        launchParticleVelocityAngularVelocityIntegration(LSParticle_.velocity(),
         LSParticle_.angularVelocity(),
         LSParticle_.force(), 
         LSParticle_.torque(), 
@@ -729,10 +724,12 @@ private:
 
     LSParticle LSParticle_;
     LSParticle fixedLSParticle_;
-    LSParticleInteraction LSParticleInteraction_;
-    LSParticleInteraction fixedLSParticleInteraction_;
+    SolidInteraction LSParticleInteraction_;
+    SolidInteraction fixedLSParticleInteraction_;
     VBondedInteraction VBondedInteraction_;
 
+    std::string dir_;
+    size_t phase_{0};
     cudaStream_t stream_;
     size_t maxGPUThread_;
 };
