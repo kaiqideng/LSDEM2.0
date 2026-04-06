@@ -713,12 +713,6 @@ public:
     std::vector<double3> torqueHostCopy() { return torque_.getHostCopy(); }
     std::vector<quaternion> orientationHostCopy() { return orientation_.getHostCopy(); }
 
-    const std::vector<double>& radiusHostRef() const { return radius_.hostRef(); }
-    const std::vector<double>& inverseMassHostRef() const { return inverseMass_.hostRef(); }
-    const std::vector<symMatrix>& inverseInertiaTensorHostRef() const { return inverseInertiaTensor_.hostRef(); }
-    const std::vector<double>& normalStiffnessHostRef() const { return normalStiffness_.hostRef(); }
-    const std::vector<double>& shearStiffnessHostRef() const { return shearStiffness_.hostRef(); }
-
     LSGridNode LSGridNode_;
     LSBoundaryNode LSBoundaryNode_;
     spatialGrid spatialGrid_;
