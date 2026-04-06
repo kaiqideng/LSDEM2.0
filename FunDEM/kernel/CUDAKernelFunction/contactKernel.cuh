@@ -156,7 +156,7 @@ const double bondFrictionCoefficient)
 {
 	const double3 rb_ij = rb_i - rb_j;
 	const double D = length(rb_ij);
-	if (isZero(D)) return 0;
+	if (isZero(D)) return 1;
 	const double3 n_ij = normalize(rb_ij);
 	const double3 e_ij = -n_ij;
 	const double D0 = bondInitialLength;
@@ -174,7 +174,7 @@ const double bondFrictionCoefficient)
 	const double bondTorsionalTorque = dot(M_TB, n_ij);
 	const double3 bondBendingTorque = M_TB - bondTorsionalTorque * n_ij;
 	const double bondArea = bondRadius * bondRadius * pi();// cross-section area of beam of the bond
-	const double bondInertiaMoment = bondRadius * bondRadius * bondRadius * bondRadius * pi() / 4.;// inertia moment
+	const double bondInertiaMoment = bondArea * bondRadius * bondRadius / 4.;// inertia moment
 	const double bondPolarInertiaMoment = 2 * bondInertiaMoment;// polar inertia moment
 	maxNormalStress = -bondNormalForce / bondArea + length(bondBendingTorque) / bondInertiaMoment * bondRadius;// maximum tension stress
 	maxShearStress = length(bondShearForce) / bondArea + fabs(bondTorsionalTorque) / bondPolarInertiaMoment * bondRadius;// maximum shear stress

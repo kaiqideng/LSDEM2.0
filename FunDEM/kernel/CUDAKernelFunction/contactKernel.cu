@@ -237,6 +237,8 @@ const size_t numPair)
 	const quaternion q_j = orientation_p[idx_j];
 	const double3 rb_i = rotateVectorByQuaternion(q_i, masterVBondPointLocalPosition[k]) + r_i;
 	const double3 rb_j = rotateVectorByQuaternion(q_j, slaveVBondPointLocalPosition[k]) + r_j;
+	bondPoint[k] = 0.5 * (rb_i +rb_j);
+
 	const double3 n1_i = rotateVectorByQuaternion(q_i, masterVBondPointLocalVectorN1[k]);
 	const double3 n2_i = rotateVectorByQuaternion(q_i, masterVBondPointLocalVectorN2[k]);
 	const double3 n3_i = rotateVectorByQuaternion(q_i, masterVBondPointLocalVectorN3[k]);

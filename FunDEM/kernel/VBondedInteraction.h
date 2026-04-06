@@ -92,6 +92,9 @@ public:
     cudaStream_t stream)
     {
         if (isZero(length(globalNormal))) return;
+        if (isZero(radius)) return;
+        if (isZero(initialLength)) return;
+
         if (upload_) 
         {
             copyDeviceToHost(stream);
