@@ -1,7 +1,8 @@
 #pragma once
 #include "myUtility/myQua.h"
+#include <cmath>
 
-static __device__ __forceinline__ double3 integrateSlidingOrRollingSpring(const double3 springPrev, 
+static __device__ __forceinline__ double3 integrateSlidingSpring(const double3 springPrev, 
 const double3 springVelocity, 
 const double3 contactNormal, 
 const double3 normalContactForce, 
@@ -23,7 +24,7 @@ const double timeStep)
 		double3 springForce = -stiffness * spring - dampingCoefficient * springVelocity;
 		double absoluteSpringForce = length(springForce);
 		double absoluteNormalContactForce = length(normalContactForce);
-		if (absoluteSpringForce > frictionCoefficient * absoluteNormalContactForce)
+		if (!isZero(absoluteSpringForce) && absoluteSpringForce > frictionCoefficient * absoluteNormalContactForce)
 		{
 			double ratio = frictionCoefficient * absoluteNormalContactForce / absoluteSpringForce;
 			springForce *= ratio;
@@ -42,23 +43,32 @@ const double normalOverlap,
 const double timeStep,
 const double normalStiffness,
 const double slidingStiffness,
-const double slidingFrictionCoefficient)
+const double slidingFrictionCoefficient, 
+const double restitutionCoefficient = 1.,
+const double effectiveMass = 0.)
 {
 	if (normalOverlap > 0.)
 	{
+		const double logRes = log(restitutionCoefficient);
+		const double dissipation = -logRes / sqrtf(logRes * logRes + pi() * pi());
+		
+		const double normalDampingCoefficient = 2. * dissipation * sqrtf(effectiveMass * normalStiffness);
 		const double3 normalRelativeVelocityAtContact = dot(relativeVelocityAtContact, contactNormal) * contactNormal;
-		const double3 normalContactForce = normalStiffness * normalOverlap * contactNormal;
+		const double3 normalContactForce = normalStiffness * normalOverlap * contactNormal - 
+		normalDampingCoefficient * normalRelativeVelocityAtContact;
 
+        const double slidingDampingCoefficient = 2. * dissipation * sqrtf(effectiveMass * slidingStiffness);
 		const double3 slidingRelativeVelocity = relativeVelocityAtContact - normalRelativeVelocityAtContact;
-		slidingSpring = integrateSlidingOrRollingSpring(slidingSpring, 
+		slidingSpring = integrateSlidingSpring(slidingSpring, 
 		slidingRelativeVelocity, 
 		contactNormal, 
 		normalContactForce, 
 		slidingFrictionCoefficient, 
 		slidingStiffness, 
-		0.0, 
+		slidingDampingCoefficient, 
 		timeStep);
-		const double3 slidingForce = -slidingStiffness * slidingSpring;
+		const double3 slidingForce = -slidingStiffness * slidingSpring - 
+		slidingDampingCoefficient * slidingRelativeVelocity;
 
 		contactForce = normalContactForce + slidingForce;
 	}
