@@ -337,10 +337,12 @@ public:
     void initialize(const double3 minDomain, const double3 maxDomain, const size_t maxGPUThread, cudaStream_t stream)
     {
         if (upload_) return;
+        
         double cellSizeOneDim = 0.;
         if (num() > 0) 
         {
             copyHostToDevice(stream);
+
             hashValue_.allocateDevice(num_device(), stream);
             hashIndex_.allocateDevice(num_device(), stream);
             if (maxGPUThread > 0) blockDim_ = maxGPUThread;
