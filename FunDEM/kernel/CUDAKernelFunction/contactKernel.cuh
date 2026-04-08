@@ -1,6 +1,5 @@
 #pragma once
 #include "myUtility/myQua.h"
-#include <cmath>
 
 static __device__ __forceinline__ double3 integrateSlidingSpring(const double3 springPrev, 
 const double3 springVelocity, 
@@ -51,7 +50,7 @@ const double effectiveMass = 0.)
 	{
 		const double logRes = log(restitutionCoefficient);
 		const double dissipation = -logRes / sqrtf(logRes * logRes + pi() * pi());
-		
+
 		const double normalDampingCoefficient = 2. * dissipation * sqrtf(effectiveMass * normalStiffness);
 		const double3 normalRelativeVelocityAtContact = dot(relativeVelocityAtContact, contactNormal) * contactNormal;
 		const double3 normalContactForce = normalStiffness * normalOverlap * contactNormal - 
@@ -168,16 +167,15 @@ const double bondFrictionCoefficient)
 	const double D = length(rb_ij);
 	if (isZero(D)) return 1;
 	const double3 n_ij = normalize(rb_ij);
-	const double3 e_ij = -n_ij;
 	const double D0 = bondInitialLength;
 	Un = 0.5 * B1 * (D - D0) * (D - D0);
-	Us = B2 * (0.5 * dot((n1_j - n1_i), e_ij) - 0.25 * dot(n1_i, n1_j) + 0.75);
+	Us = B2 * (0.5 * dot((n1_j - n1_i), -n_ij) - 0.25 * dot(n1_i, n1_j) + 0.75);
 	Ub = (0.25 * B2 + B3 + 0.5 * B4) * (dot(n1_i, n1_j) + 1.);
 	Ut = -0.5 * B4 * (dot(n1_i, n1_j) + dot(n2_i, n2_j) + dot(n3_i, n3_j) - 1);
-	F_ij = B1 * (D - D0) * e_ij + B2 / (2 * D) * ((n1_j - n1_i) - dot((n1_j - n1_i), e_ij) * e_ij);
+	F_ij = B1 * (D0 - D) * n_ij + B2 / (2 * D) * ((n1_j - n1_i) - dot((n1_j - n1_i), n_ij) * n_ij);
 	const double3 M_TB = B3 * cross(n1_j, n1_i) - 0.5 * B4 * (cross(n2_j, n2_i) + cross(n3_j, n3_i));
-	M_ij = -0.5 * B2 * cross(e_ij, n1_i) + M_TB;
-	M_ji =  0.5 * B2 * cross(e_ij, n1_j) - M_TB;
+	M_ij = 0.5 * B2 * cross(n_ij, n1_i) + M_TB;
+	M_ji = -0.5 * B2 * cross(n_ij, n1_j) - M_TB;
 
 	const double bondNormalForce = dot(F_ij, n_ij);
 	const double3 bondShearForce = F_ij - bondNormalForce * n_ij;
