@@ -148,15 +148,17 @@ public:
     void initialize(const double3 minDomain, const double3 maxDomain, const size_t maxGPUThread, cudaStream_t stream)
     {
         if (upload_) return;
+
         double cellSizeOneDim = 0.;
         if (num() > 0) 
         {
             copyHostToDevice(stream);
-            hashValue_.allocateDevice(num(), stream);
-            hashIndex_.allocateDevice(num(), stream);
+
+            hashValue_.allocateDevice(num_device(), stream);
+            hashIndex_.allocateDevice(num_device(), stream);
             if (maxGPUThread > 0) blockDim_ = maxGPUThread;
-            if (num() < maxGPUThread) blockDim_ = num();
-            gridDim_ = (num() + blockDim_ - 1) / blockDim_;
+            if (num_device() < maxGPUThread) blockDim_ = num_device();
+            gridDim_ = (num_device() + blockDim_ - 1) / blockDim_;
 
             cellSizeOneDim = *std::max_element(radius_.hostRef().begin(), radius_.hostRef().end()) * 2.0;
         }

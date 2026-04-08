@@ -191,10 +191,12 @@ public:
     void initialize(const size_t maxGPUThread, cudaStream_t stream)
     {
         if (numPair() == 0 || upload_) return;
+
         copyHostToDevice(stream);
+
         if (maxGPUThread > 0) blockDim_ = maxGPUThread;
-        if (numPair() < maxGPUThread) blockDim_ = numPair();
-        gridDim_ = (numPair() + blockDim_ - 1) / blockDim_;
+        if (numPair_device() < maxGPUThread) blockDim_ = numPair_device();
+        gridDim_ = (numPair_device() + blockDim_ - 1) / blockDim_;
         upload_ = true;
     }
 

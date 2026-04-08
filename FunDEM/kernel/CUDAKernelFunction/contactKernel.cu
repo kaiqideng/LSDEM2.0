@@ -185,7 +185,7 @@ const size_t numPair)
 	atomicAddDouble3(torque_p, idx_i, cross(r_c - r_i, F_c));
 }
 
-__global__ void addLevelSetParticleBondedForceTorqueKernel(double3* bondPoint,
+__global__ void addBondedForceTorqueKernel(double3* bondPoint,
 double* maxNormalStress, 
 double* maxShearStress,
 double* Un, 
@@ -391,7 +391,7 @@ cudaStream_t stream)
     numPair);
 }
 
-extern "C" void launchAddLevelSetParticleBondedForceTorque(
+extern "C" void launchAddBondedForceTorque(
 double3* bondPoint,
 double* maxNormalStress,
 double* maxShearStress,
@@ -430,7 +430,7 @@ const size_t gridD,
 const size_t blockD,
 cudaStream_t stream)
 {
-    addLevelSetParticleBondedForceTorqueKernel<<<gridD, blockD, 0, stream>>>(bondPoint,
+    addBondedForceTorqueKernel<<<gridD, blockD, 0, stream>>>(bondPoint,
     maxNormalStress,
     maxShearStress,
     Un,

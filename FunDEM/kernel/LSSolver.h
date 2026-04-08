@@ -250,14 +250,6 @@ public:
             return;
         }
 
-        if (LSParticle_.LSBoundaryNode_.num() == 0)
-        {
-            std::cerr << "[Solver] The number of free LS-Particles: "
-                    << "0."
-                    << std::endl;
-            return;
-        }
-
         removeFiles(outputDir);
         upload(minDomain, maxDomain);
         updateSpatialGrid();
@@ -316,10 +308,10 @@ protected:
 
     void removeFiles(const std::string outputDir)
     {
-        const std::string dir1 = outputDir + "/Particle";
-        const std::string dir2 = outputDir + "/ParticleInteraction";
+        const std::string dir1 = outputDir + "/LSParticle";
+        const std::string dir2 = outputDir + "/LSParticleInteraction";
         const std::string dir3 = outputDir + "/Wall";
-        const std::string dir4 = outputDir + "/Particle-WallInteraction";
+        const std::string dir4 = outputDir + "/LSParticle-WallInteraction";
         MKDIR(outputDir.c_str());
         removeVtuFiles(dir1);
         removeVtuFiles(dir2);
@@ -369,10 +361,10 @@ protected:
         std::cout << "[Solver] Download Completed" << std::endl;
 
         std::cout << "[Solver] Outputting... " << std::endl;
-        const std::string dir1 = outputDir + "/Particle";
-        const std::string dir2 = outputDir + "/ParticleInteraction";
+        const std::string dir1 = outputDir + "/LSParticle";
+        const std::string dir2 = outputDir + "/LSParticleInteraction";
         const std::string dir3 = outputDir + "/Wall";
-        const std::string dir4 = outputDir + "/Particle-WallInteraction";
+        const std::string dir4 = outputDir + "/LSParticle-WallInteraction";
         MKDIR(outputDir.c_str());
 
         LSParticle_.outputVTU(dir1, iFrame, iStep, time);
@@ -459,13 +451,13 @@ private:
 
     void buildLSParticleInteraction()
     {
-        launchBuildLevelSetBoundaryNodeInteractions1st(LSParticle_.LSBoundaryNode_.localPosition(), 
+        launchBuildLevelSetBoundaryNodeInteractions1st(LSParticleInteraction_.masterNeighborCount(), 
+        LSParticle_.LSBoundaryNode_.localPosition(), 
         LSParticle_.LSBoundaryNode_.particleID(), 
-        LSParticleInteraction_.masterNeighborCount(),
         LSParticle_.LSGridNode_.levelSetFunctionValue(), 
         LSParticle_.position(), 
         LSParticle_.orientation(), 
-        LSParticle_.radius(), 
+        LSParticle_.radius(),
         LSParticle_.inverseGridNodeSpacing(), 
         LSParticle_.gridNodeLocalOrigin(), 
         LSParticle_.gridNodeSize(), 
@@ -476,12 +468,14 @@ private:
         LSParticle_.spatialGrid_.minimumBoundary(), 
         LSParticle_.spatialGrid_.inverseCellSize(), 
         LSParticle_.spatialGrid_.size3D(), 
-        LSParticleInteraction_.numBoundaryNode_device(), 
+        LSParticleInteraction_.numMaster_device(), 
         LSParticleInteraction_.masterGridDim(), 
         LSParticleInteraction_.masterBlockDim(), 
         stream_);
 
-        LSParticleInteraction_.save(maxGPUThread_, stream_);
+        LSParticleInteraction_.updateNeighborPrefixSum(stream_);
+        LSParticleInteraction_.updateNumPairFromNeighborPrefixSum(maxGPUThread_, stream_);
+        LSParticleInteraction_.savePreviousStep(stream_);
 
         launchBuildLevelSetBoundaryNodeInteractions2nd(LSParticleInteraction_.slidingSpring(), 
         LSParticleInteraction_.contactPoint(), 
@@ -509,14 +503,14 @@ private:
         LSParticle_.spatialGrid_.minimumBoundary(), 
         LSParticle_.spatialGrid_.inverseCellSize(), 
         LSParticle_.spatialGrid_.size3D(), 
-        LSParticleInteraction_.numBoundaryNode_device(), 
+        LSParticleInteraction_.numMaster_device(), 
         LSParticleInteraction_.masterGridDim(), 
         LSParticleInteraction_.masterBlockDim(), 
         stream_);
 
-        launchBuildLevelSetBoundaryNodeFixedParticleInteractions1st(LSParticle_.LSBoundaryNode_.localPosition(), 
+        launchBuildLevelSetBoundaryNodeFixedParticleInteractions1st(fixedLSParticleInteraction_.masterNeighborCount(), 
+        LSParticle_.LSBoundaryNode_.localPosition(), 
         LSParticle_.LSBoundaryNode_.particleID(), 
-        fixedLSParticleInteraction_.masterNeighborCount(), 
         fixedLSParticle_.LSGridNode_.levelSetFunctionValue(), 
         LSParticle_.position(), 
         LSParticle_.orientation(), 
@@ -532,12 +526,14 @@ private:
         fixedLSParticle_.spatialGrid_.minimumBoundary(), 
         fixedLSParticle_.spatialGrid_.inverseCellSize(), 
         fixedLSParticle_.spatialGrid_.size3D(), 
-        fixedLSParticleInteraction_.numBoundaryNode_device(), 
+        fixedLSParticleInteraction_.numMaster_device(), 
         fixedLSParticleInteraction_.masterGridDim(), 
         fixedLSParticleInteraction_.masterBlockDim(), 
         stream_);
 
-        fixedLSParticleInteraction_.save(maxGPUThread_, stream_);
+        fixedLSParticleInteraction_.updateNeighborPrefixSum(stream_);
+        fixedLSParticleInteraction_.updateNumPairFromNeighborPrefixSum(maxGPUThread_, stream_);
+        fixedLSParticleInteraction_.savePreviousStep(stream_);
 
         launchBuildLevelSetBoundaryNodeFixedParticleInteractions2nd(fixedLSParticleInteraction_.slidingSpring(), 
         fixedLSParticleInteraction_.contactPoint(), 
@@ -566,7 +562,7 @@ private:
         fixedLSParticle_.spatialGrid_.minimumBoundary(), 
         fixedLSParticle_.spatialGrid_.inverseCellSize(), 
         fixedLSParticle_.spatialGrid_.size3D(), 
-        fixedLSParticleInteraction_.numBoundaryNode_device(), 
+        fixedLSParticleInteraction_.numMaster_device(), 
         fixedLSParticleInteraction_.masterGridDim(), 
         fixedLSParticleInteraction_.masterBlockDim(), 
         stream_);
@@ -631,7 +627,7 @@ private:
         fixedLSParticleInteraction_.pairBlockDim(), 
         stream_);
 
-        launchAddLevelSetParticleBondedForceTorque(VBondedInteraction_.point(), 
+        launchAddBondedForceTorque(VBondedInteraction_.point(), 
         VBondedInteraction_.maxNormalStress(), 
         VBondedInteraction_.maxShearStress(), 
         VBondedInteraction_.Un(), 

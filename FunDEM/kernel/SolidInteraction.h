@@ -3,6 +3,7 @@
 #include "CUDAKernelFunction/myUtility/myVec.h"
 #include "CUDAKernelFunction/myUtility/buildHashStartEnd.h"
 #include "CUDAKernelFunction/myUtility/myFileEdit.h"
+#include <cstddef>
 #include <cstdint>
 #include <fstream>
 
@@ -18,18 +19,49 @@ public:
     SolidInteraction(SolidInteraction&&) noexcept = default;
     SolidInteraction& operator=(SolidInteraction&&) noexcept = default;
 
-    void initialize(const size_t numMaster, const size_t maxGPUThread, cudaStream_t stream)
+    void initialize(const size_t numMasterObject, const size_t maxGPUThread, cudaStream_t stream)
     {
-        if (numMaster == 0 || numMaster < masterNeighborPrefixSum_.hostSize()) return;
-        masterNeighborCount_.allocateDevice(numMaster, stream);
-        masterNeighborPrefixSum_.allocateDevice(numMaster, stream);
-        masterNeighborPrefixSum0_.allocateDevice(numMaster, stream);
+        const size_t num = numMaster_device();
+        if (numMasterObject == 0 || numMasterObject < num) return;
+        if (num == 0)
+        {
+            masterNeighborCount_.allocateDevice(numMasterObject, stream);
+            masterNeighborPrefixSum_.allocateDevice(numMasterObject, stream);
+            masterNeighborPrefixSum0_.allocateDevice(numMasterObject, stream);
+        }
+        else
+        {
+            masterNeighborPrefixSum_.copyDeviceToHost(stream);
+            for (size_t i = 0; i < numMasterObject - num; i++)
+            {
+                masterNeighborPrefixSum_.pushHost(masterNeighborPrefixSum_.hostRef()[num - 1]);
+            }
+            masterNeighborPrefixSum_.copyHostToDevice(stream);
+            masterNeighborCount_.allocateDevice(numMasterObject, stream);
+            masterNeighborPrefixSum0_.allocateDevice(numMasterObject, stream);
+        }
+        
         if (maxGPUThread > 0) masterBlockDim_ = maxGPUThread;
-        if (numMaster < maxGPUThread) masterBlockDim_ = numMaster;
-        masterGridDim_ = (numMaster + masterBlockDim_ - 1) / masterBlockDim_;
+        if (numMasterObject < maxGPUThread) masterBlockDim_ = numMasterObject;
+        masterGridDim_ = (numMasterObject + masterBlockDim_ - 1) / masterBlockDim_;
     }
 
-    void save(const size_t maxGPUThread, cudaStream_t stream)
+    void setInteractionArraySize(const size_t arraySize, cudaStream_t stream)
+    {
+        contactPoint_.allocateDevice(arraySize, stream);
+        contactNormal_.allocateDevice(arraySize, stream);
+        contactOverlap_.allocateDevice(arraySize, stream);
+        normalElasticEnergy_.allocateDevice(arraySize, stream);
+        slidingElasticEnergy_.allocateDevice(arraySize, stream);
+        slidingSpring_.allocateDevice(arraySize, stream);
+        masterID_.allocateDevice(arraySize, stream);
+        slaveID_.allocateDevice(arraySize, stream);
+
+        slidingSpring0_.allocateDevice(arraySize, stream);
+        slaveID0_.allocateDevice(arraySize, stream);
+    }
+
+    void updateNeighborPrefixSum(cudaStream_t stream)
     {
         cudaMemcpyAsync(masterNeighborPrefixSum0_.d_ptr, masterNeighborPrefixSum_.d_ptr, 
         masterNeighborPrefixSum_.deviceSize() * sizeof(int), cudaMemcpyDeviceToDevice, stream);
@@ -38,24 +70,30 @@ public:
         masterNeighborCount_.d_ptr,
         masterNeighborCount_.deviceSize(),
         stream);
+    }
 
+    void updateNumPairFromNeighborPrefixSum(const size_t maxGPUThread, cudaStream_t stream)
+    {
         cudaStreamSynchronize(stream);
         cudaMemcpyAsync(&numPair_, masterNeighborPrefixSum_.d_ptr + masterNeighborPrefixSum_.deviceSize() - 1, 
         sizeof(int), cudaMemcpyDeviceToHost, stream);
-        if (numPair_ == 0)
+        if (numPair_ > 0)
+        {
+            pairBlockDim_ = static_cast<size_t>(numPair_);
+            if (maxGPUThread > 0 && maxGPUThread < static_cast<size_t>(numPair_)) pairBlockDim_ = maxGPUThread;
+            pairGridDim_ = (static_cast<size_t>(numPair_) + pairBlockDim_ - 1) / pairBlockDim_;   
+        }
+        else
         {
             pairGridDim_ = 1;
             pairBlockDim_ = 1;
             return;
         }
-        else
-        {
-            pairBlockDim_ = static_cast<size_t>(numPair_);
-            if (maxGPUThread > 0 && maxGPUThread < static_cast<size_t>(numPair_)) pairBlockDim_ = maxGPUThread;
-            pairGridDim_ = (static_cast<size_t>(numPair_) + pairBlockDim_ - 1) / pairBlockDim_;
-        }
+    }
 
-        if (static_cast<size_t>(numPair_) > slidingSpring0_.deviceSize())
+    void savePreviousStep(cudaStream_t stream)
+    {
+        if (static_cast<size_t>(numPair_) > contactPoint_.deviceSize())
         {
             slidingSpring0_.allocateDevice(static_cast<size_t>(numPair_), stream);
             slaveID0_.allocateDevice(static_cast<size_t>(numPair_), stream);
@@ -90,7 +128,8 @@ public:
         std::ostringstream fname;
         fname << dir << "/LSInteraction_" << std::setw(4) << std::setfill('0') << iFrame << ".vtu";
 
-        const size_t N = numPair_;
+        size_t N = 0;
+        if (numMaster() > 0) N = masterNeighborPrefixSum_.hostRef()[numMaster() - 1];
 
         const std::vector<double3>& p = contactPoint_.hostRef();
         const std::vector<double3>& n = contactNormal_.hostRef();
@@ -104,7 +143,6 @@ public:
 
         std::vector<float> normalElasticEnergy;
         std::vector<float> slidingElasticEnergy;
-        std::vector<float> totalElasticEnergy;
 
         std::vector<int32_t> conn;
         std::vector<int32_t> offs;
@@ -116,7 +154,6 @@ public:
 
         normalElasticEnergy.resize(N);
         slidingElasticEnergy.resize(N);
-        totalElasticEnergy.resize(N);
 
         conn.resize(N);
         offs.resize(N);
@@ -139,7 +176,6 @@ public:
 
             normalElasticEnergy[i] = static_cast<float>(nE[i]);
             slidingElasticEnergy[i] = static_cast<float>(sE[i]);
-            totalElasticEnergy[i] = static_cast<float>(nE[i] + sE[i]);
 
             conn[i] = static_cast<int32_t>(i);
             offs[i] = static_cast<int32_t>(i + 1);
@@ -167,7 +203,6 @@ public:
 
         size_t off_normalElasticEnergy = off_slidingDirection + blockBytes(slidingDirection.size() * sizeof(float));
         size_t off_slidingElasticEnergy = off_normalElasticEnergy + blockBytes(normalElasticEnergy.size() * sizeof(float));
-        size_t off_totalElasticEnergy = off_slidingElasticEnergy + blockBytes(slidingElasticEnergy.size() * sizeof(float));
 
         std::ofstream out(fname.str(), std::ios::binary);
         if (!out) throw std::runtime_error("Cannot open " + fname.str());
@@ -194,7 +229,6 @@ public:
             << "        <DataArray type=\"Float32\" Name=\"slidingDirection\" NumberOfComponents=\"3\" format=\"appended\" offset=\"" << off_slidingDirection << "\"/>\n"
             << "        <DataArray type=\"Float32\" Name=\"normalElasticEnergy\" format=\"appended\" offset=\"" << off_normalElasticEnergy << "\"/>\n"
             << "        <DataArray type=\"Float32\" Name=\"slidingElasticEnergy\" format=\"appended\" offset=\"" << off_slidingElasticEnergy << "\"/>\n"
-            << "        <DataArray type=\"Float32\" Name=\"totalElasticEnergy\" format=\"appended\" offset=\"" << off_totalElasticEnergy << "\"/>\n"
             << "      </PointData>\n"
             << "    </Piece>\n"
             << "  </UnstructuredGrid>\n"
@@ -225,7 +259,6 @@ public:
 
         writeBlock(normalElasticEnergy.data(), normalElasticEnergy.size() * sizeof(float));
         writeBlock(slidingElasticEnergy.data(), slidingElasticEnergy.size() * sizeof(float));
-        writeBlock(totalElasticEnergy.data(), totalElasticEnergy.size() * sizeof(float));
 
         out << "\n  </AppendedData>\n</VTKFile>\n";
     }
@@ -269,7 +302,9 @@ public:
     int* masterNeighborCount() { return masterNeighborCount_.d_ptr; }
     int* masterNeighborPrefixSum() { return masterNeighborPrefixSum_.d_ptr; }
     int* previousMasterNeighborPrefixSum() { return masterNeighborPrefixSum0_.d_ptr; }
-    size_t numBoundaryNode_device() const { return masterNeighborPrefixSum_.deviceSize(); }
+
+    size_t numMaster() const { return masterNeighborPrefixSum_.hostSize(); }
+    size_t numMaster_device() const { return masterNeighborPrefixSum_.deviceSize(); }
     size_t masterGridDim() const { return masterGridDim_; }
     size_t masterBlockDim() const { return masterBlockDim_; }
 
@@ -287,14 +322,14 @@ public:
         return v;
     }
 
-    std::vector<int> masterIDHostCopy() 
+    std::vector<int> masterIDHostCopy()
     {
         std::vector<int> v = masterID_.getHostCopy();
         v.resize(numPair_device());
         return v;
     }
 
-    std::vector<int> slaveIDHostCopy() 
+    std::vector<int> slaveIDHostCopy()
     {
         std::vector<int> v = slaveID_.getHostCopy();
         v.resize(numPair_device());

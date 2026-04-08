@@ -252,8 +252,7 @@ const size_t gridD,
 const size_t blockD,
 cudaStream_t stream);
 
-extern "C" void launchAddLevelSetParticleBondedForceTorque(
-double3* bondPoint,
+extern "C" void launchAddBondedForceTorque(double3* bondPoint,
 double* maxNormalStress,
 double* maxShearStress,
 double* Un,

@@ -76,10 +76,10 @@ const double phi111)
     dphidz_n);
 }
 
-extern "C" void launchBuildLevelSetBoundaryNodeInteractions1st(double3* localPosition_bNode,
-int* particleID_bNode,
+extern "C" void launchBuildLevelSetBoundaryNodeInteractions1st(int* boundaryNodeNeighborCount, 
 
-int* boundaryNodeNeighborCount,
+double3* localPosition_bNode,
+int* particleID_bNode,
 
 double* LSFV_gNode,
 
@@ -142,10 +142,10 @@ const size_t gridD,
 const size_t blockD,
 cudaStream_t stream);
 
-extern "C" void launchBuildLevelSetBoundaryNodeFixedParticleInteractions1st(double3* localPosition_bNode,
-int* particleID_bNode,
+extern "C" void launchBuildLevelSetBoundaryNodeFixedParticleInteractions1st(int* boundaryNodeNeighborCount, 
 
-int* boundaryNodeNeighborCount,
+double3* localPosition_bNode,
+int* particleID_bNode,
 
 double* LSFV_gNode_fp,
 
@@ -160,12 +160,12 @@ int3* gridNodeSize_fp,
 int* gridNodePrefixSum_fp,
 int* hashIndex_fp,
 
-int* spatialGridHashStart_f,
-int* spatialGridHashEnd_f,
+int* spatialGridHashStart_fp,
+int* spatialGridHashEnd_fp,
 
-const double3 minBound_f,
-const double3 inverseCellSize_f,
-const int3 gridSize3D_f,
+const double3 minBound_fp,
+const double3 inverseCellSize_fp,
+const int3 gridSize3D_fp,
 
 const size_t numBoundaryNode,
 const size_t gridD,
@@ -200,12 +200,12 @@ int3* gridNodeSize_fp,
 int* gridNodePrefixSum_fp,
 int* hashIndex_fp,
 
-int* spatialGridHashStart_f,
-int* spatialGridHashEnd_f,
+int* spatialGridHashStart_fp,
+int* spatialGridHashEnd_fp,
 
-const double3 minBound_f,
-const double3 inverseCellSize_f,
-const int3 gridSize3D_f,
+const double3 minBound_fp,
+const double3 inverseCellSize_fp,
+const int3 gridSize3D_fp,
 
 const size_t numBoundaryNode,
 const size_t gridD,

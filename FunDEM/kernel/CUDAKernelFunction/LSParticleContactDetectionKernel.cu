@@ -60,14 +60,14 @@ const size_t numBoundaryNode)
                     const double rad_B = radii_p[idxB];
                     if (lengthSquared(r_idxidxB) > rad_B * rad_B) continue;
                     const quaternion oriB = orientation_p[idxB];
-                    const double3 localPositionFrameB_idx = reverseRotateVectorByQuaternion(r_idxidxB, oriB);
+                    const double3 localPosition_idx = reverseRotateVectorByQuaternion(r_idxidxB, oriB);
                     const double3 gridNodeLocalOriginB = gridNodeLocalOrigin_p[idxB];
-                    const double invG = inverseGridNodeSpacing_p[idxB];
+                    const double inverseGridNodeSpacingB = inverseGridNodeSpacing_p[idxB];
                     const int3 gridNodeSizeB = gridNodeSize_p[idxB];
 
-                    const double gx = (localPositionFrameB_idx.x - gridNodeLocalOriginB.x) * invG;
-                    const double gy = (localPositionFrameB_idx.y - gridNodeLocalOriginB.y) * invG;
-                    const double gz = (localPositionFrameB_idx.z - gridNodeLocalOriginB.z) * invG;
+                    const double gx = (localPosition_idx.x - gridNodeLocalOriginB.x) * inverseGridNodeSpacingB;
+                    const double gy = (localPosition_idx.y - gridNodeLocalOriginB.y) * inverseGridNodeSpacingB;
+                    const double gz = (localPosition_idx.z - gridNodeLocalOriginB.z) * inverseGridNodeSpacingB;
 
                     int i0 = (int)floor(gx);
                     int j0 = (int)floor(gy);
@@ -201,14 +201,14 @@ const size_t numBoundaryNode)
                     const double rad_B = radii_p[idxB];
                     if (lengthSquared(r_idxidxB) > rad_B * rad_B) continue;
                     const quaternion oriB = orientation_p[idxB];
-                    const double3 localPositionFrameB_idx = reverseRotateVectorByQuaternion(r_idxidxB, oriB);
+                    const double3 localPosition_idx = reverseRotateVectorByQuaternion(r_idxidxB, oriB);
                     const double3 gridNodeLocalOriginB = gridNodeLocalOrigin_p[idxB];
-                    const double invG = inverseGridNodeSpacing_p[idxB];
+                    const double inverseGridNodeSpacingB = inverseGridNodeSpacing_p[idxB];
                     const int3 gridNodeSizeB = gridNodeSize_p[idxB];
 
-                    const double gx = (localPositionFrameB_idx.x - gridNodeLocalOriginB.x) * invG;
-                    const double gy = (localPositionFrameB_idx.y - gridNodeLocalOriginB.y) * invG;
-                    const double gz = (localPositionFrameB_idx.z - gridNodeLocalOriginB.z) * invG;
+                    const double gx = (localPosition_idx.x - gridNodeLocalOriginB.x) * inverseGridNodeSpacingB;
+                    const double gy = (localPosition_idx.y - gridNodeLocalOriginB.y) * inverseGridNodeSpacingB;
+                    const double gz = (localPosition_idx.z - gridNodeLocalOriginB.z) * inverseGridNodeSpacingB;
 
                     int i0 = (int)floor(gx);
                     int j0 = (int)floor(gy);
@@ -313,12 +313,12 @@ const int3* gridNodeSize_fp,
 const int* gridNodePrefixSum_fp,
 const int* hashIndex_fp,
 
-const int* spatialGridHashStart_f, 
-const int* spatialGridHashEnd_f,
+const int* spatialGridHashStart_fp, 
+const int* spatialGridHashEnd_fp,
 
-const double3 minBound_f, 
-const double3 inverseCellSize_f, 
-const int3 gridSize3D_f, 
+const double3 minBound_fp, 
+const double3 inverseCellSize_fp, 
+const int3 gridSize3D_fp, 
 
 const size_t numBoundaryNode)
 {
@@ -329,15 +329,15 @@ const size_t numBoundaryNode)
 
     const int idxA = particleID_bNode[idx];
     const double3 globalPosition_idx = rotateVectorByQuaternion(orientation_p[idxA], localPosition_bNode[idx]) + position_p[idxA];
-    int3 gridPositionA = calculateGridPosition(globalPosition_idx, minBound_f, inverseCellSize_f);
+    int3 gridPositionA = calculateGridPosition(globalPosition_idx, minBound_fp, inverseCellSize_fp);
     int3 gridStart = make_int3(-1, -1, -1);
     int3 gridEnd = make_int3(1, 1, 1);
     if (gridPositionA.x <= 0) { gridPositionA.x = 0; gridStart.x = 0; }
-    if (gridPositionA.x >= gridSize3D_f.x - 1) { gridPositionA.x = gridSize3D_f.x - 1; gridEnd.x = 0; }
+    if (gridPositionA.x >= gridSize3D_fp.x - 1) { gridPositionA.x = gridSize3D_fp.x - 1; gridEnd.x = 0; }
     if (gridPositionA.y <= 0) { gridPositionA.y = 0; gridStart.y = 0; }
-    if (gridPositionA.y >= gridSize3D_f.y - 1) { gridPositionA.y = gridSize3D_f.y - 1; gridEnd.y = 0; }
+    if (gridPositionA.y >= gridSize3D_fp.y - 1) { gridPositionA.y = gridSize3D_fp.y - 1; gridEnd.y = 0; }
     if (gridPositionA.z <= 0) { gridPositionA.z = 0; gridStart.z = 0; }
-    if (gridPositionA.z >= gridSize3D_f.z - 1) { gridPositionA.z = gridSize3D_f.z - 1; gridEnd.z = 0; }
+    if (gridPositionA.z >= gridSize3D_fp.z - 1) { gridPositionA.z = gridSize3D_fp.z - 1; gridEnd.z = 0; }
     for (int zz = gridStart.z; zz <= gridEnd.z; zz++)
     {
         for (int yy = gridStart.y; yy <= gridEnd.y; yy++)
@@ -345,23 +345,23 @@ const size_t numBoundaryNode)
             for (int xx = gridStart.x; xx <= gridEnd.x; xx++)
             {
                 const int3 gridPositionB = make_int3(gridPositionA.x + xx, gridPositionA.y + yy, gridPositionA.z + zz);
-                const int hashB = linearIndex3D(gridPositionB, gridSize3D_f);
-                const int startIndex = spatialGridHashStart_f[hashB];
+                const int hashB = linearIndex3D(gridPositionB, gridSize3D_fp);
+                const int startIndex = spatialGridHashStart_fp[hashB];
                 if (startIndex == -1) continue;
-                const int endIndex = spatialGridHashEnd_f[hashB];
+                const int endIndex = spatialGridHashEnd_fp[hashB];
                 for (int i = startIndex; i < endIndex; i++)
                 {
                     const int idxB = hashIndex_fp[i];
                     const double3 r_idxidxB = globalPosition_idx - position_fp[idxB];
                     const quaternion oriB = orientation_fp[idxB];
-                    const double3 localPositionFrameB_idx = reverseRotateVectorByQuaternion(r_idxidxB, oriB);
+                    const double3 localPosition_idx = reverseRotateVectorByQuaternion(r_idxidxB, oriB);
                     const double3 gridNodeLocalOriginB = gridNodeLocalOrigin_fp[idxB];
-                    const double invG = inverseGridNodeSpacing_fp[idxB];
+                    const double inverseGridNodeSpacingB = inverseGridNodeSpacing_fp[idxB];
                     const int3 gridNodeSizeB = gridNodeSize_fp[idxB];
 
-                    const double gx = (localPositionFrameB_idx.x - gridNodeLocalOriginB.x) * invG;
-                    const double gy = (localPositionFrameB_idx.y - gridNodeLocalOriginB.y) * invG;
-                    const double gz = (localPositionFrameB_idx.z - gridNodeLocalOriginB.z) * invG;
+                    const double gx = (localPosition_idx.x - gridNodeLocalOriginB.x) * inverseGridNodeSpacingB;
+                    const double gy = (localPosition_idx.y - gridNodeLocalOriginB.y) * inverseGridNodeSpacingB;
+                    const double gz = (localPosition_idx.z - gridNodeLocalOriginB.z) * inverseGridNodeSpacingB;
 
                     int i0 = (int)floor(gx);
                     int j0 = (int)floor(gy);
@@ -443,12 +443,12 @@ const int3* gridNodeSize_fp,
 const int* gridNodePrefixSum_fp,
 const int* hashIndex_fp,
 
-const int* spatialGridHashStart_f, 
-const int* spatialGridHashEnd_f,
+const int* spatialGridHashStart_fp, 
+const int* spatialGridHashEnd_fp,
 
-const double3 minBound_f, 
-const double3 inverseCellSize_f, 
-const int3 gridSize3D_f,
+const double3 minBound_fp, 
+const double3 inverseCellSize_fp, 
+const int3 gridSize3D_fp,
 
 const size_t numBoundaryNode)
 {
@@ -469,15 +469,15 @@ const size_t numBoundaryNode)
 
     const int idxA = particleID_bNode[idx];
     const double3 globalPosition_idx = rotateVectorByQuaternion(orientation_p[idxA], localPosition_bNode[idx]) + position_p[idxA];
-    int3 gridPositionA = calculateGridPosition(globalPosition_idx, minBound_f, inverseCellSize_f);
+    int3 gridPositionA = calculateGridPosition(globalPosition_idx, minBound_fp, inverseCellSize_fp);
     int3 gridStart = make_int3(-1, -1, -1);
     int3 gridEnd = make_int3(1, 1, 1);
     if (gridPositionA.x <= 0) { gridPositionA.x = 0; gridStart.x = 0; }
-    if (gridPositionA.x >= gridSize3D_f.x - 1) { gridPositionA.x = gridSize3D_f.x - 1; gridEnd.x = 0; }
+    if (gridPositionA.x >= gridSize3D_fp.x - 1) { gridPositionA.x = gridSize3D_fp.x - 1; gridEnd.x = 0; }
     if (gridPositionA.y <= 0) { gridPositionA.y = 0; gridStart.y = 0; }
-    if (gridPositionA.y >= gridSize3D_f.y - 1) { gridPositionA.y = gridSize3D_f.y - 1; gridEnd.y = 0; }
+    if (gridPositionA.y >= gridSize3D_fp.y - 1) { gridPositionA.y = gridSize3D_fp.y - 1; gridEnd.y = 0; }
     if (gridPositionA.z <= 0) { gridPositionA.z = 0; gridStart.z = 0; }
-    if (gridPositionA.z >= gridSize3D_f.z - 1) { gridPositionA.z = gridSize3D_f.z - 1; gridEnd.z = 0; }
+    if (gridPositionA.z >= gridSize3D_fp.z - 1) { gridPositionA.z = gridSize3D_fp.z - 1; gridEnd.z = 0; }
     for (int zz = gridStart.z; zz <= gridEnd.z; zz++)
     {
         for (int yy = gridStart.y; yy <= gridEnd.y; yy++)
@@ -485,23 +485,23 @@ const size_t numBoundaryNode)
             for (int xx = gridStart.x; xx <= gridEnd.x; xx++)
             {
                 const int3 gridPositionB = make_int3(gridPositionA.x + xx, gridPositionA.y + yy, gridPositionA.z + zz);
-                const int hashB = linearIndex3D(gridPositionB, gridSize3D_f);
-                const int startIndex = spatialGridHashStart_f[hashB];
+                const int hashB = linearIndex3D(gridPositionB, gridSize3D_fp);
+                const int startIndex = spatialGridHashStart_fp[hashB];
                 if (startIndex == -1) continue;
-                const int endIndex = spatialGridHashEnd_f[hashB];
+                const int endIndex = spatialGridHashEnd_fp[hashB];
                 for (int i = startIndex; i < endIndex; i++)
                 {
                     const int idxB = hashIndex_fp[i];
                     const double3 r_idxidxB = globalPosition_idx - position_fp[idxB];
                     const quaternion oriB = orientation_fp[idxB];
-                    const double3 localPositionFrameB_idx = reverseRotateVectorByQuaternion(r_idxidxB, oriB);
+                    const double3 localPosition_idx = reverseRotateVectorByQuaternion(r_idxidxB, oriB);
                     const double3 gridNodeLocalOriginB = gridNodeLocalOrigin_fp[idxB];
-                    const double invG = inverseGridNodeSpacing_fp[idxB];
+                    const double inverseGridNodeSpacingB = inverseGridNodeSpacing_fp[idxB];
                     const int3 gridNodeSizeB = gridNodeSize_fp[idxB];
 
-                    const double gx = (localPositionFrameB_idx.x - gridNodeLocalOriginB.x) * invG;
-                    const double gy = (localPositionFrameB_idx.y - gridNodeLocalOriginB.y) * invG;
-                    const double gz = (localPositionFrameB_idx.z - gridNodeLocalOriginB.z) * invG;
+                    const double gx = (localPosition_idx.x - gridNodeLocalOriginB.x) * inverseGridNodeSpacingB;
+                    const double gy = (localPosition_idx.y - gridNodeLocalOriginB.y) * inverseGridNodeSpacingB;
+                    const double gz = (localPosition_idx.z - gridNodeLocalOriginB.z) * inverseGridNodeSpacingB;
 
                     int i0 = (int)floor(gx);
                     int j0 = (int)floor(gy);
@@ -589,10 +589,10 @@ const size_t numBoundaryNode)
     }
 }
 
-extern "C" void launchBuildLevelSetBoundaryNodeInteractions1st(double3* localPosition_bNode,
-int* particleID_bNode,
+extern "C" void launchBuildLevelSetBoundaryNodeInteractions1st(int* boundaryNodeNeighborCount, 
 
-int* boundaryNodeNeighborCount,
+double3* localPosition_bNode,
+int* particleID_bNode,
 
 double* LSFV_gNode,
 
@@ -716,10 +716,10 @@ cudaStream_t stream)
     numBoundaryNode);
 }
 
-extern "C" void launchBuildLevelSetBoundaryNodeFixedParticleInteractions1st(double3* localPosition_bNode,
-int* particleID_bNode,
+extern "C" void launchBuildLevelSetBoundaryNodeFixedParticleInteractions1st(int* boundaryNodeNeighborCount, 
 
-int* boundaryNodeNeighborCount,
+double3* localPosition_bNode,
+int* particleID_bNode,
 
 double* LSFV_gNode_fp,
 
@@ -734,12 +734,12 @@ int3* gridNodeSize_fp,
 int* gridNodePrefixSum_fp,
 int* hashIndex_fp,
 
-int* spatialGridHashStart_f,
-int* spatialGridHashEnd_f,
+int* spatialGridHashStart_fp,
+int* spatialGridHashEnd_fp,
 
-const double3 minBound_f,
-const double3 inverseCellSize_f,
-const int3 gridSize3D_f,
+const double3 minBound_fp,
+const double3 inverseCellSize_fp,
+const int3 gridSize3D_fp,
 
 const size_t numBoundaryNode,
 const size_t gridD,
@@ -763,12 +763,12 @@ cudaStream_t stream)
     gridNodePrefixSum_fp,
     hashIndex_fp,
 
-    spatialGridHashStart_f,
-    spatialGridHashEnd_f,
+    spatialGridHashStart_fp,
+    spatialGridHashEnd_fp,
 
-    minBound_f,
-    inverseCellSize_f,
-    gridSize3D_f,
+    minBound_fp,
+    inverseCellSize_fp,
+    gridSize3D_fp,
 
     numBoundaryNode);
 }
@@ -801,12 +801,12 @@ int3* gridNodeSize_fp,
 int* gridNodePrefixSum_fp,
 int* hashIndex_fp,
 
-int* spatialGridHashStart_f,
-int* spatialGridHashEnd_f,
+int* spatialGridHashStart_fp,
+int* spatialGridHashEnd_fp,
 
-const double3 minBound_f,
-const double3 inverseCellSize_f,
-const int3 gridSize3D_f,
+const double3 minBound_fp,
+const double3 inverseCellSize_fp,
+const int3 gridSize3D_fp,
 
 const size_t numBoundaryNode,
 const size_t gridD,
@@ -841,12 +841,12 @@ cudaStream_t stream)
     gridNodePrefixSum_fp,
     hashIndex_fp,
 
-    spatialGridHashStart_f,
-    spatialGridHashEnd_f,
+    spatialGridHashStart_fp,
+    spatialGridHashEnd_fp,
 
-    minBound_f,
-    inverseCellSize_f,
-    gridSize3D_f,
+    minBound_fp,
+    inverseCellSize_fp,
+    gridSize3D_fp,
 
     numBoundaryNode);
 }
