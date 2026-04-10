@@ -114,6 +114,7 @@ public:
     * @param[in] normalStiffness                Normal stiffness for this particle.
     * @param[in] shearStiffness                 Shear stiffness for this particle.
     * @param[in] frictionCoefficient            Friction coefficient for this particle.
+    * @param[in] restitutionCoefficient         Restitution coefficient for this particle.
     *
     * @param[in] density                        Material density used for grid integration.
     * @param[in] stream                         CUDA stream (used only if we must download device -> host).
@@ -133,6 +134,7 @@ public:
     const double normalStiffness,
     const double shearStiffness,
     const double frictionCoefficient,
+    const double restitutionCoefficient, 
 
     const double density,
     cudaStream_t stream)
@@ -281,6 +283,9 @@ public:
         normalStiffness_.pushHost(normalStiffness > 0. ? normalStiffness : 0.);
         shearStiffness_.pushHost(shearStiffness > 0. ? shearStiffness : 0.);
         frictionCoefficient_.pushHost(frictionCoefficient > 0. ? frictionCoefficient : 0.);
+        double e = restitutionCoefficient;
+        if (e <= 0.0 || e > 1.0) e = 1.0;
+        restitutionCoefficient_.pushHost(e);
 
         gridNodeLocalOrigin_.pushHost(gridNodeLocalOrigin - localCenter);
         inverseGridNodeSpacing_.pushHost(1. / gridNodeSpacing);
@@ -664,6 +669,7 @@ public:
         normalStiffness_.setHost(other.normalStiffness_.hostRef());
         shearStiffness_.setHost(other.shearStiffness_.hostRef());
         frictionCoefficient_.setHost(other.frictionCoefficient_.hostRef());
+        restitutionCoefficient_.setHost(other.restitutionCoefficient_.hostRef());
 
         // ---- per-particle level-set grid meta ----
         gridNodeLocalOrigin_.setHost(other.gridNodeLocalOrigin_.hostRef());
@@ -700,6 +706,7 @@ public:
     double* normalStiffness() { return normalStiffness_.d_ptr; }
     double* shearStiffness() { return shearStiffness_.d_ptr; }
     double* frictionCoefficient() { return frictionCoefficient_.d_ptr; }
+    double* restitutionCoefficient() { return restitutionCoefficient_.d_ptr; }
     double3* gridNodeLocalOrigin() { return gridNodeLocalOrigin_.d_ptr; }
     double* inverseGridNodeSpacing() { return inverseGridNodeSpacing_.d_ptr; }
     int3* gridNodeSize() { return gridNodeSize_.d_ptr; }
@@ -714,6 +721,9 @@ public:
     std::vector<double3> forceHostCopy() { return force_.getHostCopy(); }
     std::vector<double3> torqueHostCopy() { return torque_.getHostCopy(); }
     std::vector<quaternion> orientationHostCopy() { return orientation_.getHostCopy(); }
+
+    const std::vector<double3>& positionHostRef() const { return position_.hostRef(); }
+    const std::vector<quaternion>& orientationHostRef() const { return orientation_.hostRef(); }
 
     LSGridNode LSGridNode_;
     LSBoundaryNode LSBoundaryNode_;
@@ -735,6 +745,7 @@ private:
         normalStiffness_.copyHostToDevice(stream);
         shearStiffness_.copyHostToDevice(stream);
         frictionCoefficient_.copyHostToDevice(stream);
+        restitutionCoefficient_.copyHostToDevice(stream);
 
         gridNodeLocalOrigin_.copyHostToDevice(stream);
         inverseGridNodeSpacing_.copyHostToDevice(stream);
@@ -770,6 +781,7 @@ private:
     HostDeviceArray1D<double> normalStiffness_;
     HostDeviceArray1D<double> shearStiffness_;
     HostDeviceArray1D<double> frictionCoefficient_;
+    HostDeviceArray1D<double> restitutionCoefficient_;
     HostDeviceArray1D<double3> gridNodeLocalOrigin_;
     HostDeviceArray1D<double> inverseGridNodeSpacing_;
     HostDeviceArray1D<int3> gridNodeSize_;

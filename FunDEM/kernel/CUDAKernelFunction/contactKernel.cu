@@ -62,9 +62,11 @@ const int* particleID_bNode,
 const double3* position_p, 
 const double3* velocity_p, 
 const double3* angularVelocity_p, 
+const double* inverseMass_p, 
 const double* normalStiffness_p, 
 const double* shearStiffness_p, 
 const double* frictionCoefficient_p, 
+const double* restitutionCoefficient_p, 
 
 const double dt,
 const size_t numPair)
@@ -76,32 +78,37 @@ const size_t numPair)
 	const double3 r_i = position_p[idx_i];
 	const double3 v_i = velocity_p[idx_i];
 	const double3 w_i = angularVelocity_p[idx_i];
+	const double invM_i = inverseMass_p[idx_i];
     const double kn_i = normalStiffness_p[idx_i];
 	const double ks_i = shearStiffness_p[idx_i];
 	const double mu_i = frictionCoefficient_p[idx_i];
+	const double res_i = restitutionCoefficient_p[idx_i];
 
 	const int idx_j = objectPointing[k];
 	const double3 r_j = position_p[idx_j];
 	const double3 v_j = velocity_p[idx_j];
 	const double3 w_j = angularVelocity_p[idx_j];
+	const double invM_j = inverseMass_p[idx_j];
 	const double kn_j = normalStiffness_p[idx_j];
 	const double ks_j = shearStiffness_p[idx_j];
 	const double mu_j = frictionCoefficient_p[idx_j];
+	const double res_j = restitutionCoefficient_p[idx_j];
 
     const double3 r_c = contactPoint[k];
 	const double3 n_ij = contactNormal[k];
 	const double delta = overlap[k];
 	const double3 v_c_ij = v_i + cross(w_i, r_c - r_i) - (v_j + cross(w_j, r_c - r_j));
-	const double3 w_ij = w_i - w_j;
-	double kn = 0., ks = 0.;
+	double kn = 0., ks = 0., effM = 0.;
 	if (kn_i > 0. && kn_j > 0.) kn = kn_i * kn_j / (kn_i + kn_j);
 	if (ks_i > 0. && ks_j > 0.) ks = ks_i * ks_j / (ks_i + ks_j);
+	if (invM_i > 0. || invM_j > 0.) effM = 1. / (invM_i + invM_j);
+	const double res = fmin(res_i, res_j);
 	const double mu = fmin(mu_i, mu_j);
 	double3 F_c = make_double3(0., 0., 0.);
 	double3 epsilon_s = slidingSpring[k];
 	LinearContact(F_c, epsilon_s, 
-	v_c_ij, w_ij, n_ij, delta, dt, 
-	kn, ks, mu);
+	v_c_ij, n_ij, delta, dt, 
+	kn, ks, mu, res, effM);
 
 	slidingSpring[k] = epsilon_s;
 	normalElasticEnergy[k] = 0.5 * delta * delta * kn;
@@ -130,16 +137,17 @@ const int* particleID_bNode,
 const double3* position_p, 
 const double3* velocity_p, 
 const double3* angularVelocity_p, 
+const double* inverseMass_p, 
 const double* normalStiffness_p, 
 const double* shearStiffness_p, 
 const double* frictionCoefficient_p, 
+const double* restitutionCoefficient_p, 
 
 const double3* position_fp, 
 const double3* velocity_fp, 
 const double3* angularVelocity_fp, 
-const double* normalStiffness_fp, 
-const double* shearStiffness_fp, 
-const double* frictionCoefficient_fp,
+const double* frictionCoefficient_fp, 
+const double* restitutionCoefficient_fp, 
 
 const double dt,
 const size_t numPair)
@@ -151,36 +159,36 @@ const size_t numPair)
 	const double3 r_i = position_p[idx_i];
 	const double3 v_i = velocity_p[idx_i];
 	const double3 w_i = angularVelocity_p[idx_i];
+	const double invM_i = inverseMass_p[idx_i];
     const double kn_i = normalStiffness_p[idx_i];
 	const double ks_i = shearStiffness_p[idx_i];
 	const double mu_i = frictionCoefficient_p[idx_i];
+	const double res_i = restitutionCoefficient_p[idx_i];
 
 	const int idx_j = objectPointing[k];
 	const double3 r_j = position_fp[idx_j];
 	const double3 v_j = velocity_fp[idx_j];
 	const double3 w_j = angularVelocity_fp[idx_j];
-	const double kn_j = normalStiffness_fp[idx_j];
-	const double ks_j = shearStiffness_fp[idx_j];
-	const double mu_j = frictionCoefficient_fp[idx_j];
+	const double mu_j = frictionCoefficient_fp[idx_i];
+	const double res_j = restitutionCoefficient_fp[idx_j];
 
 	const double3 r_c = contactPoint[k];
 	const double3 n_ij = contactNormal[k];
 	const double delta = overlap[k];
 	const double3 v_c_ij = v_i + cross(w_i, r_c - r_i) - (v_j + cross(w_j, r_c - r_j));
-	const double3 w_ij = w_i - w_j;
-	double kn = 0., ks = 0.;
-	if (kn_i > 0. && kn_j > 0.) kn = kn_i * kn_j / (kn_i + kn_j);
-	if (ks_i > 0. && ks_j > 0.) ks = ks_i * ks_j / (ks_i + ks_j);
+	double effM = 0.;
+	if (invM_i > 0.) effM = 1. / invM_i;
 	const double mu = fmin(mu_i, mu_j);
+	const double res = fmin(res_i, res_j);
 	double3 F_c = make_double3(0., 0., 0.);
 	double3 epsilon_s = slidingSpring[k];
 	LinearContact(F_c, epsilon_s, 
-	v_c_ij, w_ij, n_ij, delta, dt, 
-	kn, ks, mu);
+	v_c_ij, n_ij, delta, dt, 
+	kn_i, ks_i, mu, res, effM);
 	
 	slidingSpring[k] = epsilon_s;
-	normalElasticEnergy[k] = 0.5 * delta * delta * kn;
-	slidingElasticEnergy[k] = 0.5 * lengthSquared(epsilon_s) * ks;
+	normalElasticEnergy[k] = 0.5 * delta * delta * kn_i;
+	slidingElasticEnergy[k] = 0.5 * lengthSquared(epsilon_s) * ks_i;
 	atomicAddDouble3(force_p, idx_i, F_c);
 	atomicAddDouble3(torque_p, idx_i, cross(r_c - r_i, F_c));
 }
@@ -284,9 +292,11 @@ double3* torque_p,
 const double3* position_p,
 const double3* velocity_p,
 const double3* angularVelocity_p,
+const double* inverseMass_p,
 const double* normalStiffness_p,
 const double* shearStiffness_p,
 const double* frictionCoefficient_p,
+const double* restitutionCoefficient_p,
 
 const double timeStep,
 
@@ -313,9 +323,11 @@ cudaStream_t stream)
     position_p,
     velocity_p,
     angularVelocity_p,
+	inverseMass_p,
     normalStiffness_p,
     shearStiffness_p,
     frictionCoefficient_p,
+	restitutionCoefficient_p,
 
     timeStep,
 
@@ -339,16 +351,17 @@ double3* torque_p,
 const double3* position_p,
 const double3* velocity_p,
 const double3* angularVelocity_p,
+const double* inverseMass_p,
 const double* normalStiffness_p,
 const double* shearStiffness_p,
 const double* frictionCoefficient_p,
+const double* restitutionCoefficient_p,
 
 const double3* position_fp,
 const double3* velocity_fp,
 const double3* angularVelocity_fp,
-const double* normalStiffness_fp,
-const double* shearStiffness_fp,
 const double* frictionCoefficient_fp,
+const double* restitutionCoefficient_fp,
 
 const double timeStep,
 
@@ -375,16 +388,17 @@ cudaStream_t stream)
     position_p,
     velocity_p,
     angularVelocity_p,
+	inverseMass_p,
     normalStiffness_p,
     shearStiffness_p,
     frictionCoefficient_p,
+	restitutionCoefficient_p,
 
 	position_fp,
 	velocity_fp,
 	angularVelocity_fp,
-	normalStiffness_fp,
-	shearStiffness_fp,
 	frictionCoefficient_fp,
+	restitutionCoefficient_fp,
 
     timeStep,
 

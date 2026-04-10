@@ -83,6 +83,7 @@ int main(const int argc, char** argv)
         6.e5, 
         1.8e5, 
         0.577,
+        1.,
         density,
         TMP.triangleVertexIndex());
     }
@@ -98,14 +99,12 @@ int main(const int argc, char** argv)
     BW.gridInfo().gridNodeSpacing, 
     0.5 * (boxMin + boxMax), 
     make_quaternion(1., 0., 0., 0.), 
-    6.e5, 
-    1.8e5, 
     0.577);
 
     solver_.solve(boxMin, 
     boxMax, 
     make_double3(0., 0., -9.81), 
-    0.5e-5, 
+    5.e-5, 
     5., 
     50,
     argc,

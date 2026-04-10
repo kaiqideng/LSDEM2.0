@@ -2,9 +2,11 @@
 #include "CUDAKernelFunction/myUtility/myVec.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include <fstream>
 
@@ -533,8 +535,7 @@ namespace LevelSetObject
                                                        unitDirectionY,
                                                        unitDirectionZ);
 
-            const double surfaceRadius =
-                solveSurfaceRadiusAlongUnitDirection(unitDirection);
+            const double surfaceRadius = solveSurfaceRadiusAlongUnitDirection(unitDirection);
 
             surfacePoints.push_back(make_double3(surfaceRadius * unitDirection.x,
                                                  surfaceRadius * unitDirection.y,
@@ -1031,6 +1032,387 @@ namespace LevelSetObject
         const double3& meshBoundingBoxMax() const
         {
             return boundingBoxMax_;
+        }
+    };
+
+    class Sphere : public TriangleMeshParticle
+    {
+    protected:
+        // =========================
+        // Fields
+        // =========================
+        double radius_ {0.0};
+
+        size_t targetSurfacePointCount_ {0};
+        int subdivisionLevel_ {0};
+
+        bool levelSetPositiveInside_ {false};
+
+    protected:
+        // =========================
+        // Helpers
+        // =========================
+        static inline uint64_t makeEdgeKey(const int vertexIndex0,
+                                        const int vertexIndex1)
+        {
+            const uint32_t minimumIndex =
+                static_cast<uint32_t>(std::min(vertexIndex0, vertexIndex1));
+            const uint32_t maximumIndex =
+                static_cast<uint32_t>(std::max(vertexIndex0, vertexIndex1));
+
+            return (static_cast<uint64_t>(minimumIndex) << 32) |
+                static_cast<uint64_t>(maximumIndex);
+        }
+
+        static inline double3 projectPointToSphere(const double3& point,
+                                                const double radius)
+        {
+            const double pointLength = length(point);
+
+            if (pointLength < 1e-30)
+            {
+                return make_double3(0.0, 0.0, 0.0);
+            }
+
+            return (radius / pointLength) * point;
+        }
+
+        static inline int estimateSubdivisionLevelAtLeast(const size_t targetSurfacePointCount)
+        {
+            if (targetSurfacePointCount <= 12)
+            {
+                return 0;
+            }
+
+            for (int subdivisionLevel = 0; subdivisionLevel <= 12; ++subdivisionLevel)
+            {
+                const size_t vertexCount =
+                    static_cast<size_t>(10.0 * std::pow(4.0, subdivisionLevel) + 2.0);
+
+                if (vertexCount >= targetSurfacePointCount)
+                {
+                    return subdivisionLevel;
+                }
+            }
+
+            return 12;
+        }
+
+        static inline int getOrCreateMidpointVertex(const int vertexIndex0,
+                                                    const int vertexIndex1,
+                                                    const double radius,
+                                                    std::vector<double3>& vertexPosition,
+                                                    std::unordered_map<uint64_t, int>& midpointCache)
+        {
+            const uint64_t edgeKey = makeEdgeKey(vertexIndex0, vertexIndex1);
+
+            const auto iterator = midpointCache.find(edgeKey);
+            if (iterator != midpointCache.end())
+            {
+                return iterator->second;
+            }
+
+            const double3 midpoint =
+                0.5 * (vertexPosition[vertexIndex0] + vertexPosition[vertexIndex1]);
+
+            const double3 projectedMidpoint = projectPointToSphere(midpoint, radius);
+
+            const int newVertexIndex = static_cast<int>(vertexPosition.size());
+            vertexPosition.push_back(projectedMidpoint);
+            midpointCache[edgeKey] = newVertexIndex;
+
+            return newVertexIndex;
+        }
+
+        static void createIcosahedron(const double radius,
+                                    std::vector<double3>& vertexPosition,
+                                    std::vector<int3>& triangleVertexIndex)
+        {
+            const double goldenRatio = 0.5 * (1.0 + std::sqrt(5.0));
+
+            vertexPosition =
+            {
+                make_double3(-1.0,  goldenRatio,  0.0),
+                make_double3( 1.0,  goldenRatio,  0.0),
+                make_double3(-1.0, -goldenRatio,  0.0),
+                make_double3( 1.0, -goldenRatio,  0.0),
+
+                make_double3( 0.0, -1.0,  goldenRatio),
+                make_double3( 0.0,  1.0,  goldenRatio),
+                make_double3( 0.0, -1.0, -goldenRatio),
+                make_double3( 0.0,  1.0, -goldenRatio),
+
+                make_double3( goldenRatio,  0.0, -1.0),
+                make_double3( goldenRatio,  0.0,  1.0),
+                make_double3(-goldenRatio,  0.0, -1.0),
+                make_double3(-goldenRatio,  0.0,  1.0)
+            };
+
+            for (size_t vertexIndex = 0; vertexIndex < vertexPosition.size(); ++vertexIndex)
+            {
+                vertexPosition[vertexIndex] = projectPointToSphere(vertexPosition[vertexIndex], radius);
+            }
+
+            triangleVertexIndex =
+            {
+                make_int3(0, 11, 5),   make_int3(0, 5, 1),    make_int3(0, 1, 7),    make_int3(0, 7, 10),   make_int3(0, 10, 11),
+                make_int3(1, 5, 9),    make_int3(5, 11, 4),   make_int3(11, 10, 2),  make_int3(10, 7, 6),   make_int3(7, 1, 8),
+                make_int3(3, 9, 4),    make_int3(3, 4, 2),    make_int3(3, 2, 6),    make_int3(3, 6, 8),    make_int3(3, 8, 9),
+                make_int3(4, 9, 5),    make_int3(2, 4, 11),   make_int3(6, 2, 10),   make_int3(8, 6, 7),    make_int3(9, 8, 1)
+            };
+        }
+
+        static void subdivideMesh(const double radius,
+                                std::vector<double3>& vertexPosition,
+                                std::vector<int3>& triangleVertexIndex)
+        {
+            std::unordered_map<uint64_t, int> midpointCache;
+            midpointCache.reserve(triangleVertexIndex.size() * 3);
+
+            std::vector<int3> newTriangleVertexIndex;
+            newTriangleVertexIndex.reserve(triangleVertexIndex.size() * 4);
+
+            for (size_t triangleIndex = 0; triangleIndex < triangleVertexIndex.size(); ++triangleIndex)
+            {
+                const int3 triangle = triangleVertexIndex[triangleIndex];
+
+                const int vertexIndex0 = triangle.x;
+                const int vertexIndex1 = triangle.y;
+                const int vertexIndex2 = triangle.z;
+
+                const int midpointIndex01 =
+                    getOrCreateMidpointVertex(vertexIndex0,
+                                            vertexIndex1,
+                                            radius,
+                                            vertexPosition,
+                                            midpointCache);
+
+                const int midpointIndex12 =
+                    getOrCreateMidpointVertex(vertexIndex1,
+                                            vertexIndex2,
+                                            radius,
+                                            vertexPosition,
+                                            midpointCache);
+
+                const int midpointIndex20 =
+                    getOrCreateMidpointVertex(vertexIndex2,
+                                            vertexIndex0,
+                                            radius,
+                                            vertexPosition,
+                                            midpointCache);
+
+                newTriangleVertexIndex.push_back(make_int3(vertexIndex0, midpointIndex01, midpointIndex20));
+                newTriangleVertexIndex.push_back(make_int3(vertexIndex1, midpointIndex12, midpointIndex01));
+                newTriangleVertexIndex.push_back(make_int3(vertexIndex2, midpointIndex20, midpointIndex12));
+                newTriangleVertexIndex.push_back(make_int3(midpointIndex01, midpointIndex12, midpointIndex20));
+            }
+
+            triangleVertexIndex = std::move(newTriangleVertexIndex);
+        }
+
+        static void generateSphereMesh(const double radius,
+                                    const size_t targetSurfacePointCount,
+                                    int& subdivisionLevel,
+                                    std::vector<double3>& vertexPosition,
+                                    std::vector<int3>& triangleVertexIndex)
+        {
+            if (radius <= 0.0)
+            {
+                throw std::invalid_argument("Sphere::generateSphereMesh: radius must be > 0.");
+            }
+
+            if (targetSurfacePointCount < 4)
+            {
+                throw std::invalid_argument("Sphere::generateSphereMesh: targetSurfacePointCount must be >= 4.");
+            }
+
+            subdivisionLevel = estimateSubdivisionLevelAtLeast(targetSurfacePointCount);
+
+            createIcosahedron(radius, vertexPosition, triangleVertexIndex);
+
+            for (int level = 0; level < subdivisionLevel; ++level)
+            {
+                subdivideMesh(radius, vertexPosition, triangleVertexIndex);
+            }
+        }
+
+        void rebuildMesh()
+        {
+            if (radius_ <= 0.0 || targetSurfacePointCount_ < 4)
+            {
+                subdivisionLevel_ = 0;
+                clearMesh();
+                return;
+            }
+
+            std::vector<double3> vertexPosition;
+            std::vector<int3> triangleVertexIndex;
+
+            generateSphereMesh(radius_,
+                            targetSurfacePointCount_,
+                            subdivisionLevel_,
+                            vertexPosition,
+                            triangleVertexIndex);
+
+            setMeshInternal(vertexPosition, triangleVertexIndex);
+        }
+
+    public:
+        // =========================
+        // Rule of Five
+        // =========================
+        Sphere() = default;
+
+        Sphere(const double radius,
+            const size_t targetSurfacePointCount,
+            const bool levelSetPositiveInside = false)
+            :radius_(radius),
+            targetSurfacePointCount_(targetSurfacePointCount),
+            levelSetPositiveInside_(levelSetPositiveInside)
+        {
+            rebuildMesh();
+        }
+
+        Sphere(const double3& center,
+            const double radius,
+            const size_t targetSurfacePointCount,
+            const bool levelSetPositiveInside = false)
+            :radius_(radius),
+            targetSurfacePointCount_(targetSurfacePointCount),
+            levelSetPositiveInside_(levelSetPositiveInside)
+        {
+            rebuildMesh();
+        }
+
+        ~Sphere() override = default;
+        Sphere(const Sphere&) = default;
+        Sphere(Sphere&&) noexcept = default;
+        Sphere& operator=(const Sphere&) = default;
+        Sphere& operator=(Sphere&&) noexcept = default;
+
+        // =========================
+        // Host operations
+        // =========================
+        void setSphere(const double radius,
+                    const size_t targetSurfacePointCount,
+                    const bool levelSetPositiveInside = true)
+        {
+            radius_ = radius;
+            targetSurfacePointCount_ = targetSurfacePointCount;
+            levelSetPositiveInside_ = levelSetPositiveInside;
+            rebuildMesh();
+        }
+
+        void setRadius(const double radius)
+        {
+            radius_ = radius;
+            rebuildMesh();
+        }
+
+        void setTargetSurfacePointCount(const size_t targetSurfacePointCount)
+        {
+            targetSurfacePointCount_ = targetSurfacePointCount;
+            rebuildMesh();
+        }
+
+        void setLevelSetPositiveInside(const bool levelSetPositiveInside)
+        {
+            levelSetPositiveInside_ = levelSetPositiveInside;
+        }
+
+        void clearSphere()
+        {
+            radius_ = 0.0;
+            targetSurfacePointCount_ = 0;
+            subdivisionLevel_ = 0;
+            levelSetPositiveInside_ = false;
+            clearMesh();
+        }
+
+        // =========================
+        // Virtual interfaces
+        // =========================
+        bool isValid() const override
+        {
+            if (radius_ <= 0.0) return false;
+            if (targetSurfacePointCount_ < 4) return false;
+            return TriangleMeshParticle::isValid();
+        }
+
+        void evaluateImplicitFunctionValueAndGradient(double& implicitFunctionValue,
+                                                    double3& implicitFunctionGradient,
+                                                    const double3& point) const override
+        {
+            if (radius_ <= 0.0)
+            {
+                implicitFunctionValue = 1.0;
+                implicitFunctionGradient = make_double3(0.0, 0.0, 0.0);
+                return;
+            }
+
+            const double distanceToCenter = length(point);
+
+            const double baseImplicitFunctionValue = distanceToCenter - radius_;
+
+            double3 baseImplicitFunctionGradient = make_double3(0.0, 0.0, 0.0);
+            if (distanceToCenter > 1e-30)
+            {
+                baseImplicitFunctionGradient = point / distanceToCenter;
+            }
+
+            if (levelSetPositiveInside_)
+            {
+                implicitFunctionValue = -baseImplicitFunctionValue;
+                implicitFunctionGradient = -baseImplicitFunctionGradient;
+            }
+            else
+            {
+                implicitFunctionValue = baseImplicitFunctionValue;
+                implicitFunctionGradient = baseImplicitFunctionGradient;
+            }
+        }
+
+        double3 boundingBoxMin() const override
+        {
+           return -make_double3(radius_, radius_, radius_);
+        }
+
+        double3 boundingBoxMax() const override
+        {
+           return make_double3(radius_, radius_, radius_);
+        }
+
+        // =========================
+        // Getters
+        // =========================
+        double radius() const
+        {
+            return radius_;
+        }
+
+        size_t targetSurfacePointCount() const
+        {
+            return targetSurfacePointCount_;
+        }
+
+        int subdivisionLevel() const
+        {
+            return subdivisionLevel_;
+        }
+
+        bool levelSetPositiveInside() const
+        {
+            return levelSetPositiveInside_;
+        }
+
+        size_t numVertices() const
+        {
+            return vertexPosition_.size();
+        }
+
+        size_t numTriangles() const
+        {
+            return triangleVertexIndex_.size();
         }
     };
 

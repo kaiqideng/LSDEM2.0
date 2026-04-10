@@ -37,6 +37,7 @@ public:
      * @param normalStiffness Normal contact stiffness.
      * @param shearStiffness Shear contact stiffness.
      * @param frictionCoefficient Friction coefficient.
+     * @param restitutionCoefficient Restitution coefficient.
      * @param density Particle density.
      * @param boundaryNodeConnectivity Optional boundary mesh connectivity.
      */
@@ -52,6 +53,7 @@ public:
     const double normalStiffness,
     const double shearStiffness,
     const double frictionCoefficient,
+    const double restitutionCoefficient, 
     const double density,
     const std::vector<int3>& boundaryNodeConnectivity = {})
     {
@@ -68,6 +70,7 @@ public:
         normalStiffness,
         shearStiffness,
         frictionCoefficient, 
+        restitutionCoefficient, 
         density, 
         stream_);
     }
@@ -83,9 +86,8 @@ public:
      * @param gridNodeSpacing Uniform grid spacing of the level-set grid.
      * @param position Initial world position of the wall object.
      * @param orientation Initial wall orientation.
-     * @param normalStiffness Normal contact stiffness.
-     * @param shearStiffness Shear contact stiffness.
      * @param frictionCoefficient Friction coefficient.
+     * @param restitutionCoefficient Restitution coefficient.
      */
     void addWall(const std::vector<double3>& objVertexLocalPosition,
     const std::vector<int3>& objTriangleVertexID, 
@@ -95,9 +97,8 @@ public:
     const double gridNodeSpacing,
     const double3 position,
     const quaternion orientation,
-    const double normalStiffness,
-    const double shearStiffness,
-    const double frictionCoefficient)
+    const double frictionCoefficient, 
+    const double restitutionCoefficient = 1.)
     {
         fixedLSParticle_.add(objVertexLocalPosition, 
         objTriangleVertexID, 
@@ -109,9 +110,10 @@ public:
         make_double3(0., 0., 0.), 
         make_double3(0., 0., 0.), 
         orientation, 
-        normalStiffness,
-        shearStiffness,
+        0.,
+        0.,
         frictionCoefficient, 
+        restitutionCoefficient, 
         0., 
         stream_);
     }
@@ -142,11 +144,13 @@ public:
      * @param YoungsModulus Bond Young's modulus.
      * @param poissonRatio Bond Poisson ratio.
      * @param radius Bond creation radius.
+     * @param initialLength Bond creation length.
      * @param tensileStrength Bond tensile strength.
      * @param cohesion Bond cohesion.
      * @param frictionCoefficient Bond friction coefficient.
      */
-    void addBondedInteraction(const double radius, 
+    void addBondedInteractions(const double radius, 
+    const double initialLength, 
     const double YoungsModulus, 
     const double poissonRatio, 
     const double tensileStrength = 0., 
@@ -173,7 +177,7 @@ public:
             point[k], 
             normal[k], 
             radius, 
-            2. * radius, 
+            initialLength, 
             YoungsModulus, 
             poissonRatio, 
             tensileStrength, 
@@ -181,6 +185,37 @@ public:
             frictionCoefficient, 
             stream_);
         }
+    }
+
+    void addSingleBondedInteraction(const int masterObjectID, 
+    const int slaveObjectID, 
+    const double3 bondPoint, 
+    const double3 bondNormal, 
+    const double radius, 
+    const double initialLength, 
+    const double YoungsModulus, 
+    const double poissonRatio, 
+    const double tensileStrength = 0., 
+    const double cohesion= 0., 
+    const double frictionCoefficient= 0.)
+    {
+        if (masterObjectID >= LSParticle_.num() || slaveObjectID >= LSParticle_.num()) return;
+        VBondedInteraction_.add(masterObjectID, 
+        slaveObjectID, 
+        LSParticle_.positionHostRef()[masterObjectID], 
+        LSParticle_.positionHostRef()[slaveObjectID], 
+        LSParticle_.orientationHostRef()[masterObjectID], 
+        LSParticle_.orientationHostRef()[slaveObjectID], 
+        bondPoint, 
+        bondNormal, 
+        radius, 
+        initialLength, 
+        YoungsModulus, 
+        poissonRatio, 
+        tensileStrength, 
+        cohesion, 
+        frictionCoefficient, 
+        stream_);
     }
 
     void activateGPUDevice(const int device)
@@ -588,9 +623,11 @@ private:
         LSParticle_.position(),
         LSParticle_.velocity(),
         LSParticle_.angularVelocity(),
+        LSParticle_.inverseMass(),
         LSParticle_.normalStiffness(),
         LSParticle_.shearStiffness(),
         LSParticle_.frictionCoefficient(),
+        LSParticle_.restitutionCoefficient(), 
         halfTimeStep, 
         LSParticleInteraction_.numPair_device(), 
         LSParticleInteraction_.pairGridDim(), 
@@ -612,15 +649,16 @@ private:
         LSParticle_.position(),
         LSParticle_.velocity(),
         LSParticle_.angularVelocity(),
+        LSParticle_.inverseMass(),
         LSParticle_.normalStiffness(),
         LSParticle_.shearStiffness(),
         LSParticle_.frictionCoefficient(),
+        LSParticle_.restitutionCoefficient(),
         fixedLSParticle_.position(),
         fixedLSParticle_.velocity(),
         fixedLSParticle_.angularVelocity(),
-        fixedLSParticle_.normalStiffness(),
-        fixedLSParticle_.shearStiffness(),
         fixedLSParticle_.frictionCoefficient(),
+        fixedLSParticle_.restitutionCoefficient(),
         halfTimeStep, 
         fixedLSParticleInteraction_.numPair_device(), 
         fixedLSParticleInteraction_.pairGridDim(), 

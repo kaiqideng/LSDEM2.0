@@ -119,6 +119,7 @@ int main(const int argc, char** argv)
         6.e5, 
         1.8e5, 
         0.577,
+        1.,
         density);
     }
 
@@ -135,8 +136,6 @@ int main(const int argc, char** argv)
     CW.gridInfo().gridNodeSpacing, 
     make_double3(0., 0., 0.), 
     make_quaternion(1., 0., 0., 0.), 
-    6.e5, 
-    1.8e5, 
     0.577);
 
     solver_.solve(make_double3(-l, -2. * l, -2. * l), 

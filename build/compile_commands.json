@@ -46,5 +46,11 @@
   "command": "/usr/bin/c++ -I/teamspace/studios/this_studio/FunDEM/apps -I/teamspace/studios/this_studio/FunDEM -I/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction -I/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction/myUtility -I/teamspace/studios/this_studio/FunDEM/kernel -isystem /usr/local/cuda/targets/x86_64-linux/include -O3 -DNDEBUG -std=gnu++17 -fPIE -o apps/CMakeFiles/tutorial__tutorial2-LSParticleRolling.dir/tutorial/tutorial2-LSParticleRolling.cpp.o -c /teamspace/studios/this_studio/FunDEM/apps/tutorial/tutorial2-LSParticleRolling.cpp",
   "file": "/teamspace/studios/this_studio/FunDEM/apps/tutorial/tutorial2-LSParticleRolling.cpp",
   "output": "apps/CMakeFiles/tutorial__tutorial2-LSParticleRolling.dir/tutorial/tutorial2-LSParticleRolling.cpp.o"
+},
+{
+  "directory": "/teamspace/studios/this_studio/build",
+  "command": "/usr/bin/c++ -I/teamspace/studios/this_studio/FunDEM/apps -I/teamspace/studios/this_studio/FunDEM -I/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction -I/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction/myUtility -I/teamspace/studios/this_studio/FunDEM/kernel -isystem /usr/local/cuda/targets/x86_64-linux/include -O3 -DNDEBUG -std=gnu++17 -fPIE -o apps/CMakeFiles/tutorial__tutorial3-bondedLSParticleBeam.dir/tutorial/tutorial3-bondedLSParticleBeam.cpp.o -c /teamspace/studios/this_studio/FunDEM/apps/tutorial/tutorial3-bondedLSParticleBeam.cpp",
+  "file": "/teamspace/studios/this_studio/FunDEM/apps/tutorial/tutorial3-bondedLSParticleBeam.cpp",
+  "output": "apps/CMakeFiles/tutorial__tutorial3-bondedLSParticleBeam.dir/tutorial/tutorial3-bondedLSParticleBeam.cpp.o"
 }
 ]

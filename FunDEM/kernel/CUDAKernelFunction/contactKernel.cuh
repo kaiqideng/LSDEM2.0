@@ -36,15 +36,14 @@ const double timeStep)
 __device__ __forceinline__ void LinearContact(double3& contactForce, 
 double3& slidingSpring, 
 const double3 relativeVelocityAtContact,
-const double3 relativeAngularVelocityAtContact,
 const double3 contactNormal,
 const double normalOverlap,
 const double timeStep,
 const double normalStiffness,
 const double slidingStiffness,
-const double slidingFrictionCoefficient, 
-const double restitutionCoefficient = 1.,
-const double effectiveMass = 0.)
+const double slidingFrictionCoefficient,
+const double restitutionCoefficient,
+const double effectiveMass)
 {
 	if (normalOverlap > 0.)
 	{
@@ -172,10 +171,10 @@ const double bondFrictionCoefficient)
 	Us = B2 * (0.5 * dot((n1_j - n1_i), -n_ij) - 0.25 * dot(n1_i, n1_j) + 0.75);
 	Ub = (0.25 * B2 + B3 + 0.5 * B4) * (dot(n1_i, n1_j) + 1.);
 	Ut = -0.5 * B4 * (dot(n1_i, n1_j) + dot(n2_i, n2_j) + dot(n3_i, n3_j) - 1);
-	F_ij = B1 * (D0 - D) * n_ij + B2 / (2 * D) * ((n1_j - n1_i) - dot((n1_j - n1_i), n_ij) * n_ij);
+	F_ij = B1 * (D - D0) * (-n_ij) + B2 / (2 * D) * ((n1_j - n1_i) - dot((n1_j - n1_i), -n_ij) * (-n_ij));
 	const double3 M_TB = B3 * cross(n1_j, n1_i) - 0.5 * B4 * (cross(n2_j, n2_i) + cross(n3_j, n3_i));
-	M_ij = 0.5 * B2 * cross(n_ij, n1_i) + M_TB;
-	M_ji = -0.5 * B2 * cross(n_ij, n1_j) - M_TB;
+	M_ij = -0.5 * B2 * cross(-n_ij, n1_i) + M_TB;
+	M_ji = 0.5 * B2 * cross(-n_ij, n1_j) - M_TB;
 
 	const double bondNormalForce = dot(F_ij, n_ij);
 	const double3 bondShearForce = F_ij - bondNormalForce * n_ij;
@@ -214,9 +213,11 @@ double3* torque_p,
 const double3* position_p,
 const double3* velocity_p,
 const double3* angularVelocity_p,
+const double* inverseMass_p,
 const double* normalStiffness_p,
 const double* shearStiffness_p,
 const double* frictionCoefficient_p,
+const double* restitutionCoefficient_p,
 
 const double timeStep,
 
@@ -242,16 +243,17 @@ double3* torque_p,
 const double3* position_p,
 const double3* velocity_p,
 const double3* angularVelocity_p,
+const double* inverseMass_p,
 const double* normalStiffness_p,
 const double* shearStiffness_p,
 const double* frictionCoefficient_p,
+const double* restitutionCoefficient_p,
 
 const double3* position_fp,
 const double3* velocity_fp,
 const double3* angularVelocity_fp,
-const double* normalStiffness_fp,
-const double* shearStiffness_fp,
 const double* frictionCoefficient_fp,
+const double* restitutionCoefficient_fp,
 
 const double timeStep,
 

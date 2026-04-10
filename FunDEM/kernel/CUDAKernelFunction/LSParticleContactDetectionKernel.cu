@@ -9,7 +9,7 @@ const double* LSFV_gNode,
 
 const double3* position_p,
 const quaternion* orientation_p,
-const double* radii_p,
+const double* radius_p,
 const double* inverseGridNodeSpacing_p,
 const double3* gridNodeLocalOrigin_p,
 const int3* gridNodeSize_p,
@@ -56,11 +56,11 @@ const size_t numBoundaryNode)
                 {
                     const int idxB = hashIndex_p[i];
                     if (idxA >= idxB) continue;
-                    const double3 r_idxidxB = globalPosition_idx - position_p[idxB];
-                    const double rad_B = radii_p[idxB];
-                    if (lengthSquared(r_idxidxB) > rad_B * rad_B) continue;
-                    const quaternion oriB = orientation_p[idxB];
-                    const double3 localPosition_idx = reverseRotateVectorByQuaternion(r_idxidxB, oriB);
+                    const double3 relativePosition = globalPosition_idx - position_p[idxB];
+                    const double rad_B = radius_p[idxB];
+                    if (lengthSquared(relativePosition) > rad_B * rad_B) continue;
+                    const quaternion orientationB = orientation_p[idxB];
+                    const double3 localPosition_idx = reverseRotateVectorByQuaternion(relativePosition, orientationB);
                     const double3 gridNodeLocalOriginB = gridNodeLocalOrigin_p[idxB];
                     const double inverseGridNodeSpacingB = inverseGridNodeSpacing_p[idxB];
                     const int3 gridNodeSizeB = gridNodeSize_p[idxB];
@@ -140,7 +140,7 @@ const double* LSFV_gNode,
 
 const double3* position_p,
 const quaternion* orientation_p,
-const double* radii_p,
+const double* radius_p,
 const double* inverseGridNodeSpacing_p,
 const double3* gridNodeLocalOrigin_p,
 const int3* gridNodeSize_p,
@@ -197,11 +197,11 @@ const size_t numBoundaryNode)
                 {
                     const int idxB = hashIndex_p[i];
                     if (idxA >= idxB) continue;
-                    const double3 r_idxidxB = globalPosition_idx - position_p[idxB];
-                    const double rad_B = radii_p[idxB];
-                    if (lengthSquared(r_idxidxB) > rad_B * rad_B) continue;
-                    const quaternion oriB = orientation_p[idxB];
-                    const double3 localPosition_idx = reverseRotateVectorByQuaternion(r_idxidxB, oriB);
+                    const double3 relativePosition = globalPosition_idx - position_p[idxB];
+                    const double rad_B = radius_p[idxB];
+                    if (lengthSquared(relativePosition) > rad_B * rad_B) continue;
+                    const quaternion orientationB = orientation_p[idxB];
+                    const double3 localPosition_idx = reverseRotateVectorByQuaternion(relativePosition, orientationB);
                     const double3 gridNodeLocalOriginB = gridNodeLocalOrigin_p[idxB];
                     const double inverseGridNodeSpacingB = inverseGridNodeSpacing_p[idxB];
                     const int3 gridNodeSizeB = gridNodeSize_p[idxB];
@@ -269,7 +269,7 @@ const size_t numBoundaryNode)
                         phi011,
                         phi111);
 
-                        n_c = rotateVectorByQuaternion(oriB, n_c);
+                        n_c = rotateVectorByQuaternion(orientationB, n_c);
                         n_c = normalize(n_c);
                         contactPoint[index_w] = globalPosition_idx + 0.5 * ovelap * n_c;
                         contactNormal[index_w] = n_c;
@@ -352,9 +352,9 @@ const size_t numBoundaryNode)
                 for (int i = startIndex; i < endIndex; i++)
                 {
                     const int idxB = hashIndex_fp[i];
-                    const double3 r_idxidxB = globalPosition_idx - position_fp[idxB];
-                    const quaternion oriB = orientation_fp[idxB];
-                    const double3 localPosition_idx = reverseRotateVectorByQuaternion(r_idxidxB, oriB);
+                    const double3 relativePosition = globalPosition_idx - position_fp[idxB];
+                    const quaternion orientationB = orientation_fp[idxB];
+                    const double3 localPosition_idx = reverseRotateVectorByQuaternion(relativePosition, orientationB);
                     const double3 gridNodeLocalOriginB = gridNodeLocalOrigin_fp[idxB];
                     const double inverseGridNodeSpacingB = inverseGridNodeSpacing_fp[idxB];
                     const int3 gridNodeSizeB = gridNodeSize_fp[idxB];
@@ -492,9 +492,9 @@ const size_t numBoundaryNode)
                 for (int i = startIndex; i < endIndex; i++)
                 {
                     const int idxB = hashIndex_fp[i];
-                    const double3 r_idxidxB = globalPosition_idx - position_fp[idxB];
-                    const quaternion oriB = orientation_fp[idxB];
-                    const double3 localPosition_idx = reverseRotateVectorByQuaternion(r_idxidxB, oriB);
+                    const double3 relativePosition = globalPosition_idx - position_fp[idxB];
+                    const quaternion orientationB = orientation_fp[idxB];
+                    const double3 localPosition_idx = reverseRotateVectorByQuaternion(relativePosition, orientationB);
                     const double3 gridNodeLocalOriginB = gridNodeLocalOrigin_fp[idxB];
                     const double inverseGridNodeSpacingB = inverseGridNodeSpacing_fp[idxB];
                     const int3 gridNodeSizeB = gridNodeSize_fp[idxB];
@@ -562,7 +562,7 @@ const size_t numBoundaryNode)
                         phi011,
                         phi111);
 
-                        n_c = rotateVectorByQuaternion(oriB, n_c);
+                        n_c = rotateVectorByQuaternion(orientationB, n_c);
                         n_c = normalize(n_c);
                         contactPoint[index_w] = globalPosition_idx + 0.5 * ovelap * n_c;
                         contactNormal[index_w] = n_c;
@@ -598,7 +598,7 @@ double* LSFV_gNode,
 
 double3* position_p,
 quaternion* orientation_p,
-double* radii_p,
+double* radius_p,
 double* inverseGridNodeSpacing_p,
 double3* gridNodeLocalOrigin_p,
 int3* gridNodeSize_p,
@@ -625,7 +625,7 @@ cudaStream_t stream)
 
     position_p,
     orientation_p,
-    radii_p,
+    radius_p,
     inverseGridNodeSpacing_p,
     gridNodeLocalOrigin_p,
     gridNodeSize_p,
@@ -661,7 +661,7 @@ double* LSFV_gNode,
 
 double3* position_p,
 quaternion* orientation_p,
-double* radii_p,
+double* radius_p,
 double* inverseGridNodeSpacing_p,
 double3* gridNodeLocalOrigin_p,
 int3* gridNodeSize_p,
@@ -699,7 +699,7 @@ cudaStream_t stream)
 
     position_p,
     orientation_p,
-    radii_p,
+    radius_p,
     inverseGridNodeSpacing_p,
     gridNodeLocalOrigin_p,
     gridNodeSize_p,
