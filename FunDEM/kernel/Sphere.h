@@ -69,7 +69,7 @@ public:
             upload_ = false;
         }
 
-        const double volume = (4.0 / 3.0) * M_PI * radius * radius * radius;
+        const double volume = (4.0 / 3.0) * pi() * radius * radius * radius;
         const double mass = density * volume;
         const double invM = (mass > 0.0) ? (1.0 / mass) : 0.0;
 

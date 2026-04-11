@@ -20,7 +20,7 @@ const size_t num)
 	if (isZero(invM)) return;
 
 	velocity[idx] += (force[idx] * invM + gravity) * timeStep;
-	angularVelocity[idx] += (rotateInverseInertiaTensor(orientation[idx], inverseInertiaTensor[idx]) * torque[idx]) * timeStep;
+	angularVelocity[idx] += (rotateInverseInertiaTensorByQuaternion(orientation[idx], inverseInertiaTensor[idx]) * torque[idx]) * timeStep;
 }
 
 __global__ void particlePositionOrientationIntegrationKernel(double3* position, 
@@ -36,7 +36,7 @@ const size_t num)
 	if (idx >= num) return;
 
 	position[idx] += timeStep * velocity[idx];
-	orientation[idx] = quaternionRotate(orientation[idx], angularVelocity[idx], timeStep);
+	orientation[idx] = quaternionIntegration(orientation[idx], angularVelocity[idx], timeStep);
 }
 
 extern "C" void launchParticleVelocityAngularVelocityIntegration(double3* velocity,

@@ -9,8 +9,6 @@ class solver:
 public:
     solver(): LSSolver("tutorial3") {}
 
-    double beamLength = 4.;
-    size_t numParticle = 11;
     double dampingCoefficient = 0.1;
     double3 globalForce = make_double3(0., 0., 100e3);
     double3 globalTorque = make_double3(0., 0., 0.);
@@ -38,6 +36,8 @@ public:
 
 int main(const int argc, char** argv)
 {
+    const double beamLength = 4.;
+    const size_t numParticle = 11;
     const double density = 7800.;
 
     std::vector<double3> vertexPosition; 
@@ -50,10 +50,10 @@ int main(const int argc, char** argv)
 
     solver solver_;
 
-    const double particleRadii = solver_.beamLength / double(solver_.numParticle - 1) / 2.;
-    for (size_t i = 0; i < solver_.numParticle; i++)
+    const double particleRadii = beamLength / double(numParticle - 1) / 2.;
+    for (size_t i = 0; i < numParticle; i++)
     {
-        const double3 particlePosition = make_double3(i * solver_.beamLength / double(solver_.numParticle - 1), 0., 0.);
+        const double3 particlePosition = make_double3(i * 2. * particleRadii, 0., 0.);
 
         solver_.addLSParticle(TMP.vertexPosition(), 
         TMP.gridInfo().gridNodeLevelSetFunctionValue, 
@@ -64,16 +64,16 @@ int main(const int argc, char** argv)
         make_double3(0., 0., 0.), 
         make_double3(0., 0., 0.), 
         make_quaternion(1., 0., 0., 0.), 
-        6.e5, 
-        1.8e5, 
-        0.577,
+        0., 
+        0., 
+        0.,
         1.,
-        density * (i > 0),
+        density * (i == 0 ? 0. : 1.),
         TMP.triangleVertexIndex());
 
         if (i > 0)
         {
-            solver_.addSingleBondedInteraction(i - 1, 
+            solver_.addBondedInteraction(i - 1, 
             i, 
             particlePosition - make_double3(particleRadii, 0., 0.), 
             make_double3(-1., 0., 0.), 
@@ -85,7 +85,7 @@ int main(const int argc, char** argv)
     }
 
     solver_.solve(make_double3(-particleRadii, -particleRadii, -particleRadii), 
-    make_double3(solver_.beamLength + particleRadii, particleRadii, particleRadii), 
+    make_double3(beamLength + particleRadii, particleRadii, particleRadii), 
     make_double3(0., 0., 0.), 
     1.e-5, 
     1.e-3, 

@@ -186,7 +186,7 @@ public:
             if (phi_dimensionless > smoothParameter) return 0.0;
 
             const double x = -phi_dimensionless / smoothParameter;
-            return 0.5 * (1.0 + x + std::sin(M_PI * x) / M_PI);
+            return 0.5 * (1.0 + x + std::sin(pi() * x) / pi());
         };
 
         const double m_gridNode = density * gridNodeSpacing * gridNodeSpacing * gridNodeSpacing;
@@ -270,13 +270,14 @@ public:
         {
             LSGridNode_.pushHost(v);
         }
-
-        position_.pushHost(position + rotateVectorByQuaternion(orientation, localCenter));
+        
+        const quaternion q = normalize(orientation);
+        position_.pushHost(position + rotateVectorByQuaternion(q, localCenter));
         velocity_.pushHost(velocity);
         angularVelocity_.pushHost(angularVelocity);
         force_.pushHost(make_double3(0., 0., 0.));
         torque_.pushHost(make_double3(0., 0., 0.));
-        orientation_.pushHost(orientation);
+        orientation_.pushHost(q);
         radius_.pushHost(radius);
         inverseMass_.pushHost(invM);
         inverseInertiaTensor_.pushHost(invI);

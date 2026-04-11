@@ -246,25 +246,23 @@ const size_t numPair)
 
 	const int idx_i = masterObjectID[k];
 	const int idx_j = slaveObjectID[k];
-    const double3 r_i = position_p[idx_i];
-	const double3 r_j = position_p[idx_j];
 	const quaternion q_i = orientation_p[idx_i];
 	const quaternion q_j = orientation_p[idx_j];
-	const double3 rb_i = rotateVectorByQuaternion(q_i, masterVBondPointLocalPosition[k]) + r_i;
-	const double3 rb_j = rotateVectorByQuaternion(q_j, slaveVBondPointLocalPosition[k]) + r_j;
-	bondPoint[k] = 0.5 * (rb_i +rb_j);
-
 	const double3 n1_i = rotateVectorByQuaternion(q_i, masterVBondPointLocalVectorN1[k]);
 	const double3 n2_i = rotateVectorByQuaternion(q_i, masterVBondPointLocalVectorN2[k]);
 	const double3 n3_i = rotateVectorByQuaternion(q_i, masterVBondPointLocalVectorN3[k]);
 	const double3 n1_j = rotateVectorByQuaternion(q_j, slaveVBondPointLocalVectorN1[k]);
 	const double3 n2_j = rotateVectorByQuaternion(q_j, slaveVBondPointLocalVectorN2[k]);
 	const double3 n3_j = rotateVectorByQuaternion(q_j, slaveVBondPointLocalVectorN3[k]);
+    const double3 r_i = position_p[idx_i];
+	const double3 r_j = position_p[idx_j];   
+	const double3 rb_i = rotateVectorByQuaternion(q_i, masterVBondPointLocalPosition[k]) + r_i;
+	const double3 rb_j = rotateVectorByQuaternion(q_j, slaveVBondPointLocalPosition[k]) + r_j;
+	bondPoint[k] = 0.5 * (rb_i +rb_j);
 
 	double3 F_ij = make_double3(0., 0., 0.);
 	double3 M_ij = make_double3(0., 0., 0.);
 	double3 M_ji = make_double3(0., 0., 0.);
-
 	isBonded[k] = VBond(F_ij, M_ij, M_ji, Un[k], Us[k], Ub[k], Ut[k], maxNormalStress[k],maxShearStress[k],
 	rb_i, rb_j, n1_i, n2_i, n3_i, n1_j, n2_j, n3_j, B1[k], B2[k], B3[k], B4[k], bondRadius[k], bondInitialLength[k], 
 	tensileStrength[k], cohesion[k], frictionCoefficient[k]);

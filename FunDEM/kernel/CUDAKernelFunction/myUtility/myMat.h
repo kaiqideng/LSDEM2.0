@@ -104,7 +104,7 @@ HOST_DEVICE inline double3 operator*(double3 v, symMatrix m)
  * Rotates an inverse inertia tensor (or any symmetric matrix) by a quaternion.
  * Operation: I_world = R * I_local * R^T
  */
-HOST_DEVICE inline symMatrix rotateInverseInertiaTensor(quaternion q, symMatrix invI)
+HOST_DEVICE inline symMatrix rotateInverseInertiaTensorByQuaternion(quaternion q, symMatrix invI)
 {
     // 1. Construct Rotation Matrix elements from Quaternion
     // R = [ a b c ]

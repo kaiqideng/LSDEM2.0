@@ -78,7 +78,7 @@ public:
     const double3 slaveObjectPosition, 
     const quaternion masterObjectOrientation, 
     const quaternion slaveObjectOrientation, 
-    const double3 globalPoint, 
+    const double3 globalCenterPoint, 
     const double3 globalNormal, 
 
     const double radius, 
@@ -102,7 +102,7 @@ public:
             return;
         }
 
-        if (isZero(radius))
+        if (radius <= 0.)
         {
             std::cerr << "[VBondedInteraction] Invalid bond radius: "
             << radius << "."
@@ -110,11 +110,26 @@ public:
             return;
         }
 
-        if (isZero(initialLength))
+        if (initialLength <= 0.)
         {
             std::cerr << "[VBondedInteraction] Invalid bond length: "
             << initialLength << "."
             << std::endl;
+            return;
+        }
+
+        if (YoungsModulus <= 0.)
+        {
+            std::cerr << "[VBondedInteraction] Invalid Young's modulus: "
+            << YoungsModulus << "." 
+            << std::endl;
+            return;
+        }
+
+        if (poissonRatio <= -1.0 || poissonRatio >= 0.5)
+        {
+            std::cerr << "[VBondedInteraction] Invalid Poisson ratio: "
+                    << poissonRatio << "." << std::endl;
             return;
         }
 
@@ -128,7 +143,7 @@ public:
         const double Lb = initialLength;
         const double Eb = YoungsModulus;
         const double Gb = Eb / (2. * (1. + poissonRatio));
-        const double Ab = M_PI * Rb * Rb;
+        const double Ab = pi() * Rb * Rb;
         const double Ib = Ab * Rb * Rb / 4.;
         const double Jb = 2. * Ib;
         const double Kn = Eb * Ab / Lb;
@@ -142,8 +157,8 @@ public:
         const double B3 = Kb - B2 / 4. - B4 / 2.;
 
         const double3 n = globalNormal / length(globalNormal);
-        const double3 globalPosition_i = globalPoint + 0.5 * Lb * n;
-        const double3 globalPosition_j = globalPoint - 0.5 * Lb * n;
+        const double3 globalPosition_i = globalCenterPoint + 0.5 * Lb * n;
+        const double3 globalPosition_j = globalCenterPoint - 0.5 * Lb * n;
         const double3 localPosition_i = reverseRotateVectorByQuaternion(globalPosition_i - masterObjectPosition, masterObjectOrientation);
         const double3 localPosition_j = reverseRotateVectorByQuaternion(globalPosition_j - slaveObjectPosition, slaveObjectOrientation);
 
@@ -164,7 +179,7 @@ public:
         slaveObjectID_.pushHost(slaveObjectID);
 
         activated_.pushHost(1);
-        point_.pushHost(globalPoint);
+        centerPoint_.pushHost(globalCenterPoint);
 
         radius_.pushHost(radius);
         initialLength_.pushHost(initialLength);
@@ -204,7 +219,7 @@ public:
      * @brief Output bonded interaction state to a VTU file.
      *
      * Each bonded interaction is written as one VTK_VERTEX point located at
-     * the bond center point_. Bond state variables are stored as point data.
+     * the bond center centerPoint_. Bond state variables are stored as point data.
      *
      * @param dir Output directory.
      * @param iFrame Output frame index.
@@ -225,7 +240,7 @@ public:
         const std::vector<int>& masterObjectID = masterObjectID_.hostRef();
         const std::vector<int>& slaveObjectID = slaveObjectID_.hostRef();
         const std::vector<int>& activated = activated_.hostRef();
-        const std::vector<double3>& point = point_.hostRef();
+        const std::vector<double3>& point = centerPoint_.hostRef();
 
         const std::vector<double>& Un = Un_.hostRef();
         const std::vector<double>& Us = Us_.hostRef();
@@ -380,7 +395,7 @@ public:
         slaveObjectID_.setHost(other.slaveObjectID_.hostRef());
 
         activated_.setHost(other.activated_.hostRef());
-        point_.setHost(other.point_.hostRef());
+        centerPoint_.setHost(other.centerPoint_.hostRef());
 
         radius_.setHost(other.radius_.hostRef());
         initialLength_.setHost(other.initialLength_.hostRef());
@@ -410,7 +425,7 @@ public:
     int* slaveObjectID() { return slaveObjectID_.d_ptr; }
 
     int* activated() { return activated_.d_ptr; }
-    double3* point() { return point_.d_ptr; }
+    double3* centerPoint() { return centerPoint_.d_ptr; }
 
     double* radius() { return radius_.d_ptr; }
     double* initialLength() { return initialLength_.d_ptr; }
@@ -440,8 +455,8 @@ public:
     double3* slaveVBondPointLocalVectorN3() { return slaveVBondPoint_.localVectorN3_.d_ptr; }
     double3* slaveVBondPointLocalPosition() { return slaveVBondPoint_.localPosition_.d_ptr; }
 
-    size_t numPair() const { return point_.hostSize(); }
-    size_t numPair_device() const { return point_.deviceSize(); }
+    size_t numPair() const { return centerPoint_.hostSize(); }
+    size_t numPair_device() const { return centerPoint_.deviceSize(); }
     const size_t& gridDim() const { return gridDim_; }
     const size_t& blockDim() const { return blockDim_; }
 
@@ -452,7 +467,7 @@ private:
         slaveObjectID_.copyHostToDevice(stream);
 
         activated_.copyHostToDevice(stream);
-        point_.copyHostToDevice(stream);
+        centerPoint_.copyHostToDevice(stream);
 
         radius_.copyHostToDevice(stream);
         initialLength_.copyHostToDevice(stream);
@@ -479,7 +494,7 @@ private:
     void copyDeviceToHost(cudaStream_t stream)
     {
         activated_.copyDeviceToHost(stream);
-        point_.copyDeviceToHost(stream);
+        centerPoint_.copyDeviceToHost(stream);
 
         Un_.copyDeviceToHost(stream);
         Us_.copyDeviceToHost(stream);
@@ -493,7 +508,7 @@ private:
     HostDeviceArray1D<int> slaveObjectID_;
 
     HostDeviceArray1D<int> activated_;
-    HostDeviceArray1D<double3> point_;
+    HostDeviceArray1D<double3> centerPoint_;
 
     HostDeviceArray1D<double> radius_;
     HostDeviceArray1D<double> initialLength_;

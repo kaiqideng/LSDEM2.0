@@ -149,7 +149,7 @@ public:
      * @param cohesion Bond cohesion.
      * @param frictionCoefficient Bond friction coefficient.
      */
-    void addBondedInteractions(const double radius, 
+    void addBondedInteraction(const double radius, 
     const double initialLength, 
     const double YoungsModulus, 
     const double poissonRatio, 
@@ -187,7 +187,7 @@ public:
         }
     }
 
-    void addSingleBondedInteraction(const int masterObjectID, 
+    void addBondedInteraction(const int masterObjectID, 
     const int slaveObjectID, 
     const double3 bondPoint, 
     const double3 bondNormal, 
@@ -665,7 +665,7 @@ private:
         fixedLSParticleInteraction_.pairBlockDim(), 
         stream_);
 
-        launchAddBondedForceTorque(VBondedInteraction_.point(), 
+        launchAddBondedForceTorque(VBondedInteraction_.centerPoint(), 
         VBondedInteraction_.maxNormalStress(), 
         VBondedInteraction_.maxShearStress(), 
         VBondedInteraction_.Un(), 

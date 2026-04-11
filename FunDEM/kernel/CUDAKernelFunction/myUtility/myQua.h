@@ -74,7 +74,7 @@ HOST_DEVICE inline quaternion conjugate(quaternion q) {
  * Updates quaternion orientation based on angular velocity.
  * Formula: q_new = q_old + 0.5 * q_old * omega * dt
  */
-HOST_DEVICE inline quaternion quaternionRotate(quaternion q, double3 angularVelocity, double timeStep)
+HOST_DEVICE inline quaternion quaternionIntegration(quaternion q, double3 angularVelocity, double timeStep)
 {
     // ω is in WORLD frame.
     // Explicit Euler on: q_dot = 0.5 * (0, ω) ⊗ q
