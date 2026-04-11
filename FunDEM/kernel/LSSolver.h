@@ -5,6 +5,7 @@
 #include "CUDAKernelFunction/LSParticleContactDetectionKernel.cuh"
 #include "CUDAKernelFunction/contactKernel.cuh"
 #include "CUDAKernelFunction/particleIntegrationKernel.cuh"
+#include "myMat.h"
 #include <filesystem>
 
 class LSSolver
@@ -40,6 +41,17 @@ public:
      * @param restitutionCoefficient Restitution coefficient.
      * @param density Particle density.
      * @param boundaryNodeConnectivity Optional boundary mesh connectivity.
+     * Notes / assumptions:
+     * It computes basic rigid-body properties from the grid:
+     * - mass via a smoothed Heaviside integration of the level-set field
+     * - center of mass (centroidLocalPosition) from the same Heaviside weights
+     * - inertia tensor around the center of mass, then inverse inertia.
+     *
+     * Here the Heaviside assumes "inside is negative" (phi < 0 means inside),
+     * because smoothHeaviside(phi/gridNodeSpacing, ...) returns ~1 for negative phi.
+     * If your convention is opposite, you must flip the sign passed into smoothHeaviside.
+     * This function modifies host arrays. If previous data has been uploaded (upload_==true),
+     * it first downloads device -> host to keep host-side buffers consistent.
      */
     void addLSParticle(const std::vector<double3>& boundaryNodeLocalPosition,
     const std::vector<double>& gridNodeLevelSetFunctionValue,
@@ -57,6 +69,121 @@ public:
     const double density,
     const std::vector<int3>& boundaryNodeConnectivity = {})
     {
+        double mass = 0.;
+        auto smoothHeaviside = [&](const double phi_dimensionless, const double smoothParameter) -> double
+        {
+            if (smoothParameter <= 0.0) return (phi_dimensionless > 0.0) ? 0.0 : 1.0;
+
+            if (phi_dimensionless < -smoothParameter) return 1.0;
+            if (phi_dimensionless > smoothParameter) return 0.0;
+
+            const double x = -phi_dimensionless / smoothParameter;
+            return 0.5 * (1.0 + x + std::sin(pi() * x) / pi());
+        };
+        const double m_gridNode = density * gridNodeSpacing * gridNodeSpacing * gridNodeSpacing;
+        for (int x = 0; x < gridNodeSize.x; x++)
+        {
+            for (int y = 0; y < gridNodeSize.y; y++)
+            {
+                for (int z = 0; z < gridNodeSize.z; z++)
+                {
+                    const int index = linearIndex3D(make_int3(x, y, z), gridNodeSize);
+                    const double H = smoothHeaviside(gridNodeLevelSetFunctionValue[index] / gridNodeSpacing, 1.5);
+                    mass += H;
+                }
+            }
+        }
+        mass *= m_gridNode;
+
+        double inverseMass = 0.;
+        double3 centroidLocalPosition = make_double3(0., 0., 0.);
+        symMatrix I = make_symMatrix(0., 0., 0., 0., 0., 0.);
+        symMatrix inverseInertiaTensor = make_symMatrix(0., 0., 0., 0., 0., 0.);
+        if (mass > 0.)
+        {
+            inverseMass = 1. / mass;
+            for (int x = 0; x < gridNodeSize.x; x++)
+            {
+                for (int y = 0; y < gridNodeSize.y; y++)
+                {
+                    for (int z = 0; z < gridNodeSize.z; z++)
+                    {
+                        const int index = linearIndex3D(make_int3(x, y, z), gridNodeSize);
+                        const double H = smoothHeaviside(gridNodeLevelSetFunctionValue[index] / gridNodeSpacing, 1.5);
+                        centroidLocalPosition.x += H * (gridNodeLocalOrigin.x + double(x) * gridNodeSpacing);
+                        centroidLocalPosition.y += H * (gridNodeLocalOrigin.y + double(y) * gridNodeSpacing);
+                        centroidLocalPosition.z += H * (gridNodeLocalOrigin.z + double(z) * gridNodeSpacing);
+                    }
+                }
+            }
+            centroidLocalPosition *= m_gridNode / mass;
+
+            for (int x = 0; x < gridNodeSize.x; x++)
+            {
+                for (int y = 0; y < gridNodeSize.y; y++)
+                {
+                    for (int z = 0; z < gridNodeSize.z; z++)
+                    {
+                        const int index = linearIndex3D(make_int3(x, y, z), gridNodeSize);
+                        const double H = smoothHeaviside(gridNodeLevelSetFunctionValue[index] / gridNodeSpacing, 1.5);
+                        double3 r = gridNodeLocalOrigin + gridNodeSpacing * make_double3(double(x), double(y), double(z)) - centroidLocalPosition;
+                        I.xx += H * (r.y * r.y + r.z * r.z) * m_gridNode;
+                        I.yy += H * (r.x * r.x + r.z * r.z) * m_gridNode;
+                        I.zz += H * (r.y * r.y + r.x * r.x) * m_gridNode;
+                        I.xy -= H * r.x * r.y * m_gridNode;
+                        I.xz -= H * r.x * r.z * m_gridNode;
+                        I.yz -= H * r.y * r.z * m_gridNode;
+                    }
+                }
+            }
+            inverseInertiaTensor = inverse(I);
+        }
+
+        const quaternion orientation_new = normalize(orientation);
+        const double3 position_new = position + rotateVectorByQuaternion(orientation_new, centroidLocalPosition);
+        std::vector<double3> boundaryNodeLocalPosition_new;
+        for (const auto& p : boundaryNodeLocalPosition)
+        {
+            boundaryNodeLocalPosition_new.push_back(p - centroidLocalPosition);
+        }
+        const double3 gridNodeLocalOrigin_new = gridNodeLocalOrigin - centroidLocalPosition;
+
+        LSParticle_.add(boundaryNodeLocalPosition_new, 
+        boundaryNodeConnectivity, 
+        gridNodeLevelSetFunctionValue, 
+        gridNodeLocalOrigin_new, 
+        gridNodeSize, 
+        gridNodeSpacing, 
+        position_new, 
+        velocity, 
+        angularVelocity, 
+        orientation_new, 
+        inverseMass, 
+        inverseInertiaTensor, 
+        normalStiffness,
+        shearStiffness,
+        frictionCoefficient, 
+        restitutionCoefficient, 
+        stream_);
+    }
+
+    void addLSParticle(const std::vector<double3>& boundaryNodeLocalPosition,
+    const std::vector<double>& gridNodeLevelSetFunctionValue,
+    const double3 gridNodeLocalOrigin,
+    const int3 gridNodeSize,
+    const double gridNodeSpacing,
+    const double3 position,
+    const double3 velocity,
+    const double3 angularVelocity,
+    const quaternion orientation,
+    const double mass,
+    const symMatrix inertiaTensor,
+    const double normalStiffness,
+    const double shearStiffness,
+    const double frictionCoefficient,
+    const double restitutionCoefficient,
+    const std::vector<int3>& boundaryNodeConnectivity = {})
+    {
         LSParticle_.add(boundaryNodeLocalPosition, 
         boundaryNodeConnectivity, 
         gridNodeLevelSetFunctionValue, 
@@ -67,11 +194,12 @@ public:
         velocity, 
         angularVelocity, 
         orientation, 
-        normalStiffness,
-        shearStiffness,
+        mass > 0. ? 1. / mass : 0., 
+        mass > 0. ? inverse(inertiaTensor) : make_symMatrix(0., 0., 0., 0., 0., 0.), 
+        normalStiffness, 
+        shearStiffness, 
         frictionCoefficient, 
         restitutionCoefficient, 
-        density, 
         stream_);
     }
 
@@ -110,11 +238,12 @@ public:
         make_double3(0., 0., 0.), 
         make_double3(0., 0., 0.), 
         orientation, 
-        0.,
-        0.,
+        0., 
+        make_symMatrix(0., 0., 0., 0., 0., 0.), 
+        0., 
+        0., 
         frictionCoefficient, 
         restitutionCoefficient, 
-        0., 
         stream_);
     }
 
@@ -403,10 +532,9 @@ protected:
         MKDIR(outputDir.c_str());
 
         LSParticle_.outputVTU(dir1, iFrame, iStep, time);
-        LSParticle_.outputVTU_connectivity(dir1, iFrame, iStep, time);
         LSParticleInteraction_.outputVTU(dir2, iFrame, iStep, time);
         VBondedInteraction_.outputVTU(dir2, iFrame, iStep, time);
-        fixedLSParticle_.outputVTU_connectivity(dir3, iFrame, iStep, time);
+        fixedLSParticle_.outputVTU(dir3, iFrame, iStep, time);
         fixedLSParticleInteraction_.outputVTU(dir4, iFrame, iStep, time);
         std::cout << "[Solver] Output Completed" << std::endl;
     }

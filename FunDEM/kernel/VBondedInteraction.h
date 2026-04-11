@@ -8,19 +8,11 @@
 
 inline double3 getInitialOrthogonalUnitVectorsN2(const double3 n1)
 {
-    double3 n2 = make_double3(0., 0., 0.);
-    if (n1.x == 0.) n2.x = 1.;
-    else
-    {
-        if (n1.y == 0.) n2.y = 1.;
-        else
-        {
-            n2.x = -n1.y;
-            n2.y = n1.x;
-            n2 = normalize(n2);
-        }
-    }
-    return n2;
+    const double3 ref = (fabs(n1.x) < 0.9) ?
+    make_double3(1., 0., 0.) : 
+    make_double3(0., 1., 0.);
+
+    return normalize(cross(ref, n1));
 }
 
 inline double3 getInitialOrthogonalUnitVectorsN3(const double3 n1, const double3 n2)
