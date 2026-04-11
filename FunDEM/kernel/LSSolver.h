@@ -5,7 +5,6 @@
 #include "CUDAKernelFunction/LSParticleContactDetectionKernel.cuh"
 #include "CUDAKernelFunction/contactKernel.cuh"
 #include "CUDAKernelFunction/particleIntegrationKernel.cuh"
-#include "myMat.h"
 #include <filesystem>
 
 class LSSolver
