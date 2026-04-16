@@ -48,7 +48,7 @@ int main(const int argc, char** argv)
     const symMatrix inertiaTensor = make_symMatrix(inertia, inertia, inertia, 0., 0., 0.);
 
     LevelSetObject::Sphere S;
-    S.setSphere(particleRadii, 1000);
+    S.setParams(particleRadii, 1000);
     S.buildGridByResolution();
 
     for (size_t i = 0; i < numParticle; i++)

@@ -43,7 +43,7 @@ class solver:
     public LSSolver
 {
 public:
-    solver(): LSSolver("tutorial2") {}
+    solver(): LSSolver("tutorial4") {}
 
     double dampingCoefficient = 0.2;
 
@@ -72,9 +72,8 @@ int main(const int argc, char** argv)
     const double density = 1000.;
     const int nSpheres_max = 3000;
 
-    SpherePacking::Pack Pack_ = SpherePacking::buildNonOverlappingInCylinder_LargeFirst(make_double3(- l, 0, 0.), 
-    make_double3(l, 0., 0.), 
-    2 * l, 
+    SpherePacking::Pack Pack_ = SpherePacking::buildNonOverlappingInBox_LargeFirst(make_double3(0, 0, -3. * l), 
+    make_double3(2. * l, 2. * l, 3. * l), 
     nSpheres_max, 
     rMin, 
     rMax);
@@ -124,24 +123,34 @@ int main(const int argc, char** argv)
         SP.triangleVertexIndex());
     }
 
-    LevelSetObject::CylinderWall CW;
-    CW.setParams(make_double3(- l, 0, 0.), 
-    make_double3(l, 0., 0.), 
-    2. * l);
-    CW.buildGridByResolution(100);
-    solver_.addWall(CW.vertexPosition(), 
-    CW.triangleVertexIndex(), 
-    CW.gridInfo().gridNodeLevelSetFunctionValue, 
-    CW.gridInfo().gridOrigin, 
-    CW.gridInfo().gridNodeSize, 
-    CW.gridInfo().gridNodeSpacing, 
-    make_double3(0., 0., 0.), 
+    LevelSetObject::BoxWall BW0;
+    BW0.setParams(4. * l, 4. * l, 8. * l);
+    BW0.buildGridByResolution();
+    solver_.addWall(BW0.vertexPosition(), 
+    BW0.triangleVertexIndex(), 
+    BW0.gridInfo().gridNodeLevelSetFunctionValue, 
+    BW0.gridInfo().gridOrigin, 
+    BW0.gridInfo().gridNodeSize, 
+    BW0.gridInfo().gridNodeSpacing, 
+    make_double3(l, l, 0.), 
     make_quaternion(1., 0., 0., 0.), 
     0.577);
-    //CW.outputGridVTU("build/T2Cylinder");
 
-    solver_.solve(make_double3(-l, -2. * l, -2. * l), 
-    make_double3(l, 2. * l, 2. * l), 
+    LevelSetObject::BoxWall BW;
+    BW.setParams(2. * l, 2. * l, 6. * l);
+    BW.buildGridByResolution();
+    solver_.addWall(BW.vertexPosition(), 
+    BW.triangleVertexIndex(), 
+    BW.gridInfo().gridNodeLevelSetFunctionValue, 
+    BW.gridInfo().gridOrigin, 
+    BW.gridInfo().gridNodeSize, 
+    BW.gridInfo().gridNodeSpacing, 
+    make_double3(l, l, 0.), 
+    make_quaternion(1., 0., 0., 0.), 
+    0.577);
+
+    solver_.solve(make_double3(0., 0., -3. * l), 
+    make_double3(2. * l, 2. * l, 3. * l), 
     make_double3(0., 0., -9.81), 
     1.e-4, 
     5., 
@@ -149,19 +158,12 @@ int main(const int argc, char** argv)
     argc,
     argv);
 
-    solver_.setFixedAngularVelocityToWall(0, make_double3(pi(), 0., 0.));
-    solver_.solve(make_double3(-l, -2. * l, -2. * l), 
-    make_double3(l, 2. * l, 2. * l), 
-    make_double3(0., 0., -9.81), 
-    1.e-4, 
-    5., 
-    50, 
-    argc,
-    argv);
+    solver_.moveWall(0, make_double3(0., 0., l));
+    solver_.moveWall(1, make_double3(4. * l, 4. * l, 0.));
+    solver_.addPeriodicBoundaryXY2D();
 
-    solver_.setFixedAngularVelocityToWall(0, make_double3(0., 0., 0.));
-    solver_.solve(make_double3(-l, -2. * l, -2. * l), 
-    make_double3(l, 2. * l, 2. * l), 
+    solver_.solve(make_double3(0., 0., -3. * l), 
+    make_double3(2. * l, 2. * l, 3. * l), 
     make_double3(0., 0., -9.81), 
     1.e-4, 
     5., 

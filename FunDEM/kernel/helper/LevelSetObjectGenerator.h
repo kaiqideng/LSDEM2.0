@@ -1,3 +1,6 @@
+// NOTE:
+// Most of the code on this page was generated with the assistance of AI tools.
+
 #pragma once
 #include "CUDAKernelFunction/myUtility/myVec.h"
 #include <algorithm>
@@ -60,9 +63,9 @@ namespace LevelSetObject
         //   value < 0 : inside particle
         //   value > 0 : outside particle
         //   value = 0 : on particle surface
-        double3 gridOrigin {0.0, 0.0, 0.0};
-        int3 gridNodeSize {0, 0, 0};
-        double gridNodeSpacing {0.0};
+        double3 gridOrigin{0.0, 0.0, 0.0};
+        int3 gridNodeSize{0, 0, 0};
+        double gridNodeSpacing{0.0};
         std::vector<double> gridNodeLevelSetFunctionValue;
     };
 
@@ -93,7 +96,7 @@ namespace LevelSetObject
         // =========================
         void clearGrid()
         {
-            gridInfo_ = GridInfo {};
+            gridInfo_ = GridInfo{};
         }
 
         bool isGridBuilt() const
@@ -107,32 +110,17 @@ namespace LevelSetObject
         virtual bool isValid() const = 0;
 
         virtual void evaluateImplicitFunctionValueAndGradient(double& implicitFunctionValue,
-                                                              double3& implicitFunctionGradient,
-                                                              const double3& point) const = 0;
+                                                            double3& implicitFunctionGradient,
+                                                            const double3& point) const = 0;
 
         virtual double3 boundingBoxMin() const = 0;
         virtual double3 boundingBoxMax() const = 0;
 
         // =========================
-        // Query functions
-        // =========================
-        double evaluateImplicitFunctionValue(const double3& point) const
-        {
-            double implicitFunctionValue = 0.0;
-            double3 implicitFunctionGradient = make_double3(0.0, 0.0, 0.0);
-
-            evaluateImplicitFunctionValueAndGradient(implicitFunctionValue,
-                                                     implicitFunctionGradient,
-                                                     point);
-
-            return implicitFunctionValue;
-        }
-
-        // =========================
         // Build
         // =========================
         void buildGrid(const double backgroundGridNodeSpacing,
-                       const int backgroundGridPaddingLayers = 2)
+                    const int backgroundGridPaddingLayers = 2)
         {
             clearGrid();
 
@@ -149,19 +137,19 @@ namespace LevelSetObject
                 double(std::max(1, backgroundGridPaddingLayers)) * gridSpacing;
 
             double3 backgroundGridMin = make_double3(particleBoundingBoxMin.x - paddingDistance,
-                                                     particleBoundingBoxMin.y - paddingDistance,
-                                                     particleBoundingBoxMin.z - paddingDistance);
+                                                    particleBoundingBoxMin.y - paddingDistance,
+                                                    particleBoundingBoxMin.z - paddingDistance);
 
             double3 backgroundGridMax = make_double3(particleBoundingBoxMax.x + paddingDistance,
-                                                     particleBoundingBoxMax.y + paddingDistance,
-                                                     particleBoundingBoxMax.z + paddingDistance);
+                                                    particleBoundingBoxMax.y + paddingDistance,
+                                                    particleBoundingBoxMax.z + paddingDistance);
 
-            auto snapDownToGrid = [&](const double coordinate)
+            const auto snapDownToGrid = [&](const double coordinate)
             {
                 return gridSpacing * std::floor(coordinate / gridSpacing);
             };
 
-            auto snapUpToGrid = [&](const double coordinate)
+            const auto snapUpToGrid = [&](const double coordinate)
             {
                 return gridSpacing * std::ceil(coordinate / gridSpacing);
             };
@@ -189,7 +177,7 @@ namespace LevelSetObject
                 size_t(numGridNodesX) * size_t(numGridNodesY) * size_t(numGridNodesZ),
                 0.0);
 
-            const double minGradientNormForSignedDistanceApproximation = 1e-14;
+            const double minGradientNormForSignedDistanceApproximation = 1e-12;
 
             for (int gridNodeK = 0; gridNodeK < numGridNodesZ; ++gridNodeK)
             {
@@ -209,8 +197,8 @@ namespace LevelSetObject
                         double3 implicitFunctionGradient = make_double3(0.0, 0.0, 0.0);
 
                         evaluateImplicitFunctionValueAndGradient(implicitFunctionValue,
-                                                                 implicitFunctionGradient,
-                                                                 point);
+                                                                implicitFunctionGradient,
+                                                                point);
 
                         const double implicitFunctionGradientNorm = length(implicitFunctionGradient);
 
@@ -229,15 +217,14 @@ namespace LevelSetObject
 
                         gridInfo_.gridNodeLevelSetFunctionValue[
                             linearIndex3D(make_int3(gridNodeI, gridNodeJ, gridNodeK),
-                                          gridInfo_.gridNodeSize)] =
-                            signedDistanceLikeLevelSetValue;
+                                        gridInfo_.gridNodeSize)] = signedDistanceLikeLevelSetValue;
                     }
                 }
             }
         }
 
         void buildGridByResolution(const int backgroundGridNodesPerParticleDiameter = 50,
-                                   const int backgroundGridPaddingLayers = 2)
+                                const int backgroundGridPaddingLayers = 2)
         {
             if (!isValid()) return;
             if (backgroundGridNodesPerParticleDiameter <= 0) return;
@@ -254,13 +241,13 @@ namespace LevelSetObject
 
             const double particleReferenceDiameter =
                 std::max(particleBoundingBoxSizeX,
-                         std::max(particleBoundingBoxSizeY, particleBoundingBoxSizeZ));
+                        std::max(particleBoundingBoxSizeY, particleBoundingBoxSizeZ));
 
             if (particleReferenceDiameter <= 0.0) return;
 
             buildGrid(particleReferenceDiameter /
-                      double(backgroundGridNodesPerParticleDiameter),
-                      backgroundGridPaddingLayers);
+                        double(backgroundGridNodesPerParticleDiameter),
+                    backgroundGridPaddingLayers);
         }
 
         // =========================
@@ -280,8 +267,7 @@ namespace LevelSetObject
 
             if (gridInfo_.gridNodeLevelSetFunctionValue.size() != N) return;
 
-
-            const std::string fileName = fileNamePrefix + ".vtu";
+            const std::string fileName = fileNamePrefix + "LSGrid.vtu";
 
             std::ofstream out(fileName);
             if (!out)
@@ -295,9 +281,6 @@ namespace LevelSetObject
             out << "    <Piece NumberOfPoints=\"" << N
                 << "\" NumberOfCells=\"" << N << "\">\n";
 
-            // ---------------------------------------------------------------------
-            // Points
-            // ---------------------------------------------------------------------
             out << "      <Points>\n";
             out << "        <DataArray type=\"Float32\" NumberOfComponents=\"3\" format=\"ascii\">\n";
 
@@ -324,9 +307,6 @@ namespace LevelSetObject
             out << "        </DataArray>\n";
             out << "      </Points>\n";
 
-            // ---------------------------------------------------------------------
-            // Cells: one VTK_VERTEX per point
-            // ---------------------------------------------------------------------
             out << "      <Cells>\n";
 
             out << "        <DataArray type=\"Int32\" Name=\"connectivity\" format=\"ascii\">\n";
@@ -346,15 +326,12 @@ namespace LevelSetObject
             out << "        <DataArray type=\"UInt8\" Name=\"types\" format=\"ascii\">\n";
             for (size_t id = 0; id < N; ++id)
             {
-                out << "          1\n"; // VTK_VERTEX
+                out << "          1\n";
             }
             out << "        </DataArray>\n";
 
             out << "      </Cells>\n";
 
-            // ---------------------------------------------------------------------
-            // Point data
-            // ---------------------------------------------------------------------
             out << "      <PointData Scalars=\"levelSetValue\">\n";
 
             out << "        <DataArray type=\"Float32\" Name=\"levelSetValue\" format=\"ascii\">\n";
@@ -400,206 +377,880 @@ namespace LevelSetObject
     };
 
     //=========================================================================
-    // Generic surface point generation for star-shaped geometry
+    // Triangle mesh particle (SAH BVH - SAFE NAMING VERSION)
     //=========================================================================
-    inline std::vector<double3> generateSurfacePointsUniform_StarShaped(const Base& object,
-                                                                        const int numSurfacePoints = 10000)
+    class TriangleMeshParticle : public Base
     {
-        std::vector<double3> surfacePoints;
-        if (numSurfacePoints <= 0 || !object.isValid()) return surfacePoints;
+    protected:
 
-        const double3 particleBoundingBoxMin = object.boundingBoxMin();
-        const double3 particleBoundingBoxMax = object.boundingBoxMax();
+        // =========================
+        // Fields
+        // =========================
+        std::vector<double3> vertexPosition_;
+        std::vector<int3> triangleVertexIndex_;
 
-        const double particleBoundingBoxSizeX = particleBoundingBoxMax.x - particleBoundingBoxMin.x;
-        const double particleBoundingBoxSizeY = particleBoundingBoxMax.y - particleBoundingBoxMin.y;
-        const double particleBoundingBoxSizeZ = particleBoundingBoxMax.z - particleBoundingBoxMin.z;
+        bool levelSetPositiveInside_{false};
 
-        const double maximumSearchRadius =
-            0.5 * std::max(particleBoundingBoxSizeX,
-                           std::max(particleBoundingBoxSizeY, particleBoundingBoxSizeZ));
+        double3 boundingBoxMin_{0.0, 0.0, 0.0};
+        double3 boundingBoxMax_{0.0, 0.0, 0.0};
 
-        if (maximumSearchRadius <= 0.0) return surfacePoints;
-
-        auto solveSurfaceRadiusAlongUnitDirection =
-            [&](const double3& unitDirection) -> double
+        // =========================
+        // BVH
+        // =========================
+        struct BVHNode
         {
-            double lowerBoundRadius = 0.0;
-            double upperBoundRadius = 2.0 * maximumSearchRadius;
+            double3 bmin;
+            double3 bmax;
 
-            double upperBoundImplicitFunctionValue = 0.0;
+            int left = -1;
+            int right = -1;
 
-            {
-                double implicitFunctionValue = 0.0;
-                double3 implicitFunctionGradient = make_double3(0.0, 0.0, 0.0);
+            int start = 0;
+            int count = 0;
 
-                object.evaluateImplicitFunctionValueAndGradient(
-                    implicitFunctionValue,
-                    implicitFunctionGradient,
-                    make_double3(upperBoundRadius * unitDirection.x,
-                                 upperBoundRadius * unitDirection.y,
-                                 upperBoundRadius * unitDirection.z));
-
-                upperBoundImplicitFunctionValue = implicitFunctionValue;
-
-                int numBracketExpansion = 0;
-                while (upperBoundImplicitFunctionValue < 0.0 && numBracketExpansion < 30)
-                {
-                    upperBoundRadius *= 2.0;
-
-                    object.evaluateImplicitFunctionValueAndGradient(
-                        implicitFunctionValue,
-                        implicitFunctionGradient,
-                        make_double3(upperBoundRadius * unitDirection.x,
-                                     upperBoundRadius * unitDirection.y,
-                                     upperBoundRadius * unitDirection.z));
-
-                    upperBoundImplicitFunctionValue = implicitFunctionValue;
-                    numBracketExpansion++;
-                }
-
-                if (upperBoundImplicitFunctionValue < 0.0) return upperBoundRadius;
-            }
-
-            double currentRadius = 0.5 * (lowerBoundRadius + upperBoundRadius);
-
-            for (int iteration = 0; iteration < 25; ++iteration)
-            {
-                const double3 point = make_double3(currentRadius * unitDirection.x,
-                                                   currentRadius * unitDirection.y,
-                                                   currentRadius * unitDirection.z);
-
-                double implicitFunctionValue = 0.0;
-                double3 implicitFunctionGradient = make_double3(0.0, 0.0, 0.0);
-
-                object.evaluateImplicitFunctionValueAndGradient(
-                    implicitFunctionValue,
-                    implicitFunctionGradient,
-                    point);
-
-                if (implicitFunctionValue > 0.0) upperBoundRadius = currentRadius;
-                else lowerBoundRadius = currentRadius;
-
-                const double derivativeOfImplicitFunctionAlongRadius =
-                    implicitFunctionGradient.x * unitDirection.x +
-                    implicitFunctionGradient.y * unitDirection.y +
-                    implicitFunctionGradient.z * unitDirection.z;
-
-                double updatedRadius = currentRadius;
-
-                if (std::fabs(derivativeOfImplicitFunctionAlongRadius) > 1e-14)
-                {
-                    updatedRadius =
-                        currentRadius -
-                        implicitFunctionValue / derivativeOfImplicitFunctionAlongRadius;
-                }
-
-                if (updatedRadius <= lowerBoundRadius || updatedRadius >= upperBoundRadius)
-                {
-                    updatedRadius = 0.5 * (lowerBoundRadius + upperBoundRadius);
-                }
-
-                if (std::fabs(upperBoundRadius - lowerBoundRadius) <
-                    1e-12 * std::max(1.0, upperBoundRadius))
-                {
-                    currentRadius = updatedRadius;
-                    break;
-                }
-
-                currentRadius = updatedRadius;
-            }
-
-            return currentRadius;
+            bool isLeaf = false;
         };
 
-        surfacePoints.reserve(size_t(numSurfacePoints));
+        std::vector<BVHNode> bvhNodes_;
+        std::vector<int> bvhPrimitiveIndices_;
+        std::vector<double3> triangleCentroid_;
 
-        const double goldenRatio = 0.5 * (1.0 + std::sqrt(5.0));
-        const double goldenAngle = 2.0 * M_PI * (1.0 - 1.0 / goldenRatio);
+        static constexpr int NUM_BINS = 12;
+        static constexpr int MAX_LEAF_SIZE = 4;
 
-        for (int surfacePointIndex = 0; surfacePointIndex < numSurfacePoints; ++surfacePointIndex)
+    protected:
+
+        // =========================
+        // SAFE vector ops (renamed)
+        // =========================
+        static inline double3 vecMin(const double3& a, const double3& b)
         {
-            const double normalizedIndex =
-                (surfacePointIndex + 0.5) / double(numSurfacePoints);
-
-            const double unitDirectionY = 1.0 - 2.0 * normalizedIndex;
-            const double unitDirectionRadiusOnXZPlane =
-                std::sqrt(std::max(0.0, 1.0 - unitDirectionY * unitDirectionY));
-
-            const double azimuthAngle = goldenAngle * double(surfacePointIndex);
-
-            const double unitDirectionX = unitDirectionRadiusOnXZPlane * std::cos(azimuthAngle);
-            const double unitDirectionZ = unitDirectionRadiusOnXZPlane * std::sin(azimuthAngle);
-
-            const double3 unitDirection = make_double3(unitDirectionX,
-                                                       unitDirectionY,
-                                                       unitDirectionZ);
-
-            const double surfaceRadius = solveSurfaceRadiusAlongUnitDirection(unitDirection);
-
-            surfacePoints.push_back(make_double3(surfaceRadius * unitDirection.x,
-                                                 surfaceRadius * unitDirection.y,
-                                                 surfaceRadius * unitDirection.z));
+            return make_double3(
+                std::min(a.x, b.x),
+                std::min(a.y, b.y),
+                std::min(a.z, b.z)
+            );
         }
 
-        return surfacePoints;
-    }
+        static inline double3 vecMax(const double3& a, const double3& b)
+        {
+            return make_double3(
+                std::max(a.x, b.x),
+                std::max(a.y, b.y),
+                std::max(a.z, b.z)
+            );
+        }
+
+        static inline double3 triCentroid(const double3& a,
+                                        const double3& b,
+                                        const double3& c)
+        {
+            return (a + b + c) * (1.0 / 3.0);
+        }
+
+        // =========================
+        // closest point
+        // =========================
+        static inline double3 closestPointOnTriangle(const double3& p,
+                                                    const double3& a,
+                                                    const double3& b,
+                                                    const double3& c)
+        {
+            const double3 ab = b - a;
+            const double3 ac = c - a;
+            const double3 ap = p - a;
+
+            double d1 = dot(ab, ap);
+            double d2 = dot(ac, ap);
+            if (d1 <= 0.0 && d2 <= 0.0) return a;
+
+            double3 bp = p - b;
+            double d3 = dot(ab, bp);
+            double d4 = dot(ac, bp);
+            if (d3 >= 0.0 && d4 <= d3) return b;
+
+            double vc = d1 * d4 - d3 * d2;
+            if (vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0)
+                return a + (d1 / (d1 - d3)) * ab;
+
+            double3 cp = p - c;
+            double d5 = dot(ab, cp);
+            double d6 = dot(ac, cp);
+            if (d6 >= 0.0 && d5 <= d6) return c;
+
+            double vb = d5 * d2 - d1 * d6;
+            if (vb <= 0.0 && d2 >= 0.0 && d6 <= 0.0)
+                return a + (d2 / (d2 - d6)) * ac;
+
+            double va = d3 * d6 - d5 * d4;
+            if (va <= 0.0 && (d4 - d3) >= 0.0 && (d5 - d6) >= 0.0)
+            {
+                double3 bc = c - b;
+                return b + ((d4 - d3) / ((d4 - d3) + (d5 - d6))) * bc;
+            }
+
+            double denom = 1.0 / (va + vb + vc);
+            double v = vb * denom;
+            double w = vc * denom;
+
+            return a + ab * v + ac * w;
+        }
+
+        // =========================
+        // triangle bbox
+        // =========================
+        inline double3 computeTriangleMin(int t) const
+        {
+            const int3 tri = triangleVertexIndex_[t];
+            const double3& a = vertexPosition_[tri.x];
+            const double3& b = vertexPosition_[tri.y];
+            const double3& c = vertexPosition_[tri.z];
+            return vecMin(vecMin(a, b), c);
+        }
+
+        inline double3 computeTriangleMax(int t) const
+        {
+            const int3 tri = triangleVertexIndex_[t];
+            const double3& a = vertexPosition_[tri.x];
+            const double3& b = vertexPosition_[tri.y];
+            const double3& c = vertexPosition_[tri.z];
+            return vecMax(vecMax(a, b), c);
+        }
+
+        // =========================
+        // bbox range
+        // =========================
+        double3 bboxMinFromRange(int l, int r) const
+        {
+            double3 mn = computeTriangleMin(bvhPrimitiveIndices_[l]);
+
+            for (int i = l + 1; i < r; ++i)
+                mn = vecMin(mn, computeTriangleMin(bvhPrimitiveIndices_[i]));
+
+            return mn;
+        }
+
+        double3 bboxMaxFromRange(int l, int r) const
+        {
+            double3 mx = computeTriangleMax(bvhPrimitiveIndices_[l]);
+
+            for (int i = l + 1; i < r; ++i)
+                mx = vecMax(mx, computeTriangleMax(bvhPrimitiveIndices_[i]));
+
+            return mx;
+        }
+
+        // =========================
+        // SAH split
+        // =========================
+        int sahSplit(int l, int r, int axis)
+        {
+            struct Bin
+            {
+                double3 bmin = make_double3(1e30,1e30,1e30);
+                double3 bmax = make_double3(-1e30,-1e30,-1e30);
+                int count = 0;
+            };
+
+            Bin bins[NUM_BINS];
+
+            double3 sceneMin = bboxMinFromRange(l, r);
+            double3 sceneMax = bboxMaxFromRange(l, r);
+
+            double extent =
+                (axis == 0) ? sceneMax.x - sceneMin.x :
+                (axis == 1) ? sceneMax.y - sceneMin.y :
+                            sceneMax.z - sceneMin.z;
+
+            if (extent < 1e-12) return (l + r) / 2;
+
+            for (int i = l; i < r; ++i)
+            {
+                int tri = bvhPrimitiveIndices_[i];
+                double3 c = triangleCentroid_[tri];
+
+                double pos =
+                    (axis == 0) ? c.x :
+                    (axis == 1) ? c.y :
+                                c.z;
+
+                int b = std::min(NUM_BINS - 1,
+                        (int)(NUM_BINS * (pos -
+                        ((axis==0)?sceneMin.x:(axis==1)?sceneMin.y:sceneMin.z)) / extent));
+
+                b = std::max(0, b);
+
+                double3 mn = computeTriangleMin(tri);
+                double3 mx = computeTriangleMax(tri);
+
+                bins[b].bmin = vecMin(bins[b].bmin, mn);
+                bins[b].bmax = vecMax(bins[b].bmax, mx);
+                bins[b].count++;
+            }
+
+            auto SA = [](const double3& mn, const double3& mx)
+            {
+                double3 e = mx - mn;
+                return 2.0 * (e.x*e.y + e.y*e.z + e.z*e.x);
+            };
+
+            double bestCost = 1e30;
+            int bestSplit = (l + r) / 2;
+
+            for (int i = 1; i < NUM_BINS; ++i)
+            {
+                double3 lmin = make_double3(1e30,1e30,1e30);
+                double3 lmax = make_double3(-1e30,-1e30,-1e30);
+                double3 rmin = make_double3(1e30,1e30,1e30);
+                double3 rmax = make_double3(-1e30,-1e30,-1e30);
+
+                int lc = 0, rc = 0;
+
+                for (int j = 0; j < i; ++j)
+                {
+                    if (!bins[j].count) continue;
+                    lmin = vecMin(lmin, bins[j].bmin);
+                    lmax = vecMax(lmax, bins[j].bmax);
+                    lc += bins[j].count;
+                }
+
+                for (int j = i; j < NUM_BINS; ++j)
+                {
+                    if (!bins[j].count) continue;
+                    rmin = vecMin(rmin, bins[j].bmin);
+                    rmax = vecMax(rmax, bins[j].bmax);
+                    rc += bins[j].count;
+                }
+
+                double cost = lc * SA(lmin,lmax) + rc * SA(rmin,rmax);
+
+                if (cost < bestCost)
+                {
+                    bestCost = cost;
+                    bestSplit = i;
+                }
+            }
+
+            return bestSplit;
+        }
+
+        // =========================
+        // build BVH
+        // =========================
+        int buildBVH(int l, int r)
+        {
+            BVHNode node;
+            node.bmin = bboxMinFromRange(l, r);
+            node.bmax = bboxMaxFromRange(l, r);
+
+            size_t idx = bvhNodes_.size();
+            bvhNodes_.push_back(node);
+
+            if (r - l <= MAX_LEAF_SIZE)
+            {
+                bvhNodes_[idx].isLeaf = true;
+                bvhNodes_[idx].start = l;
+                bvhNodes_[idx].count = r - l;
+                return idx;
+            }
+
+            double3 e = node.bmax - node.bmin;
+
+            int axis =
+                (e.x > e.y && e.x > e.z) ? 0 :
+                (e.y > e.z ? 1 : 2);
+
+            int split = sahSplit(l, r, axis);
+
+            if (split <= (int)l || split >= (int)r)
+                split = (l + r) / 2;
+
+            int left = buildBVH(l, split);
+            int right = buildBVH(split, r);
+
+            bvhNodes_[idx].left = left;
+            bvhNodes_[idx].right = right;
+
+            return idx;
+        }
+
+        void rebuildBVH()
+        {
+            bvhNodes_.clear();
+            bvhPrimitiveIndices_.resize(triangleVertexIndex_.size());
+            triangleCentroid_.resize(triangleVertexIndex_.size());
+
+            for (size_t i = 0; i < triangleVertexIndex_.size(); ++i)
+            {
+                bvhPrimitiveIndices_[i] = i;
+
+                const int3 t = triangleVertexIndex_[i];
+                triangleCentroid_[i] =
+                    triCentroid(vertexPosition_[t.x],
+                                vertexPosition_[t.y],
+                                vertexPosition_[t.z]);
+            }
+
+            if (!bvhPrimitiveIndices_.empty())
+                buildBVH(0, bvhPrimitiveIndices_.size());
+        }
+
+        // =========================
+        // traversal
+        // =========================
+        struct Hit
+        {
+            double dist2 = std::numeric_limits<double>::max();
+            double3 cp;
+        };
+
+        void traverse(int nodeId, const double3& p, Hit& hit) const
+        {
+            const BVHNode& n = bvhNodes_[nodeId];
+
+            auto boxDist2 = [&](const double3& mn, const double3& mx)
+            {
+                double dx = std::max({mn.x - p.x, 0.0, p.x - mx.x});
+                double dy = std::max({mn.y - p.y, 0.0, p.y - mx.y});
+                double dz = std::max({mn.z - p.z, 0.0, p.z - mx.z});
+                return dx * dx + dy * dy + dz * dz;
+            };
+
+            if (boxDist2(n.bmin, n.bmax) > hit.dist2) return;
+
+            if (n.isLeaf)
+            {
+                for (int i = 0; i < n.count; ++i)
+                {
+                    int tri = bvhPrimitiveIndices_[n.start + i];
+                    const int3 t = triangleVertexIndex_[tri];
+
+                    const double3& a = vertexPosition_[t.x];
+                    const double3& b = vertexPosition_[t.y];
+                    const double3& c = vertexPosition_[t.z];
+
+                    double3 cp = closestPointOnTriangle(p,a,b,c);
+                    double d2 = lengthSquared(p - cp);
+
+                    if (d2 < hit.dist2)
+                    {
+                        hit.dist2 = d2;
+                        hit.cp = cp;
+                    }
+                }
+                return;
+            }
+
+            traverse(n.left, p, hit);
+            traverse(n.right, p, hit);
+        }
+
+        double3 closestPointBVH(const double3& p) const
+        {
+            Hit h;
+            traverse(0, p, h);
+            return h.cp;
+        }
+
+        // =========================
+        // inside test (unchanged)
+        // =========================
+        static inline double solidAngleFromPointToTriangle(const double3& p,
+                                                            const double3& a,
+                                                            const double3& b,
+                                                            const double3& c)
+        {
+            const double3 r0 = a - p;
+            const double3 r1 = b - p;
+            const double3 r2 = c - p;
+
+            const double l0 = length(r0);
+            const double l1 = length(r1);
+            const double l2 = length(r2);
+
+            if (l0 < 1e-30 || l1 < 1e-30 || l2 < 1e-30)
+                return 0.0;
+
+            const double numerator = dot(r0, cross(r1, r2));
+            const double denominator =
+                l0 * l1 * l2 +
+                dot(r0, r1) * l2 +
+                dot(r1, r2) * l0 +
+                dot(r2, r0) * l1;
+
+            return 2.0 * std::atan2(numerator, denominator);
+        }
+
+        bool isPointInsideClosedTriangleMesh(const double3& point) const
+        {
+            if (!isValid()) return false;
+
+            double sum = 0.0;
+
+            for (size_t i = 0; i < triangleVertexIndex_.size(); ++i)
+            {
+                const int3 t = triangleVertexIndex_[i];
+
+                const double3& a = vertexPosition_[t.x];
+                const double3& b = vertexPosition_[t.y];
+                const double3& c = vertexPosition_[t.z];
+
+                sum += solidAngleFromPointToTriangle(point,a,b,c);
+            }
+
+            return std::fabs(sum / (4.0 * pi())) > 0.5;
+        }
+
+        void updateBoundingBoxFromMesh()
+        {
+            if (vertexPosition_.empty())
+            {
+                boundingBoxMin_ = make_double3(0,0,0);
+                boundingBoxMax_ = make_double3(0,0,0);
+                return;
+            }
+
+            boundingBoxMin_ = vertexPosition_[0];
+            boundingBoxMax_ = vertexPosition_[0];
+
+            for (size_t i = 1; i < vertexPosition_.size(); ++i)
+            {
+                boundingBoxMin_ = vecMin(boundingBoxMin_, vertexPosition_[i]);
+                boundingBoxMax_ = vecMax(boundingBoxMax_, vertexPosition_[i]);
+            }
+        }
+
+        void setMeshInternal(const std::vector<double3>& v,
+                            const std::vector<int3>& f)
+        {
+            vertexPosition_ = v;
+            triangleVertexIndex_ = f;
+
+            updateBoundingBoxFromMesh();
+            rebuildBVH();
+            clearGrid();
+        }
+
+    public:
+
+        TriangleMeshParticle() = default;
+
+        TriangleMeshParticle(const std::vector<double3>& v,
+                            const std::vector<int3>& f)
+            : vertexPosition_(v),
+            triangleVertexIndex_(f)
+        {
+            updateBoundingBoxFromMesh();
+            rebuildBVH();
+        }
+
+        ~TriangleMeshParticle() override = default;
+
+        void setMesh(const std::vector<double3>& v,
+                    const std::vector<int3>& f)
+        {
+            setMeshInternal(v,f);
+        }
+
+        void setLevelSetPositiveInside(bool v)
+        {
+            levelSetPositiveInside_ = v;
+        }
+
+        void clearMesh()
+        {
+            vertexPosition_.clear();
+            triangleVertexIndex_.clear();
+            bvhNodes_.clear();
+            bvhPrimitiveIndices_.clear();
+            triangleCentroid_.clear();
+
+            updateBoundingBoxFromMesh();
+            clearGrid();
+        }
+
+        bool isValid() const override
+        {
+            if (vertexPosition_.empty()) return false;
+            if (triangleVertexIndex_.empty()) return false;
+
+            int n = (int)vertexPosition_.size();
+
+            for (auto& t : triangleVertexIndex_)
+            {
+                if (t.x < 0 || t.y < 0 || t.z < 0) return false;
+                if (t.x >= n || t.y >= n || t.z >= n) return false;
+                if (t.x == t.y || t.y == t.z || t.z == t.x) return false;
+            }
+            return true;
+        }
+
+        void evaluateImplicitFunctionValueAndGradient(double& value,
+                                                    double3& grad,
+                                                    const double3& p) const override
+        {
+            if (!isValid())
+            {
+                value = 1.0;
+                grad = make_double3(0,0,0);
+                return;
+            }
+
+            double3 cp = closestPointBVH(p);
+            double d = length(p - cp);
+
+            bool inside = isPointInsideClosedTriangleMesh(p);
+
+            value = inside ? -d : d;
+
+            if (d > 1e-30)
+            {
+                double3 g = (p - cp) / d;
+                grad = inside ? -g : g;
+            }
+            else grad = make_double3(0,0,0);
+
+            Utility::applyLevelSetSign(value, grad, levelSetPositiveInside_);
+        }
+
+        double3 boundingBoxMin() const override { return boundingBoxMin_; }
+        double3 boundingBoxMax() const override { return boundingBoxMax_; }
+
+        // =========================
+        // Getters
+        // =========================
+        const std::vector<double3>& vertexPosition() const
+        {
+            return vertexPosition_;
+        }
+
+        std::vector<double3>& vertexPosition()
+        {
+            return vertexPosition_;
+        }
+
+        const std::vector<int3>& triangleVertexIndex() const
+        {
+            return triangleVertexIndex_;
+        }
+
+        std::vector<int3>& triangleVertexIndex()
+        {
+            return triangleVertexIndex_;
+        }
+
+        const double3& meshBoundingBoxMin() const
+        {
+            return boundingBoxMin_;
+        }
+
+        const double3& meshBoundingBoxMax() const
+        {
+            return boundingBoxMax_;
+        }
+    };
 
     //=========================================================================
-    // Superellipsoid particle
+    // Superellipsoid particle based on triangle mesh (icosphere-style remeshing)
     //=========================================================================
-    class SuperellipsoidParticle : public Base
+    class Superellipsoid : public TriangleMeshParticle
     {
     protected:
         // =========================
         // Fields
         // =========================
-        double rx_ {1.0};
-        double ry_ {1.0};
-        double rz_ {1.0};
-        double ee_ {1.0};
-        double en_ {1.0};
+        double rx_{1.0};
+        double ry_{1.0};
+        double rz_{1.0};
+        double ee_{1.0};
+        double en_{1.0};
+
+        int subdivisionLevel_{4}; // recommended: 0 ~ 6
+
+    protected:
+        // =========================
+        // Helpers
+        // =========================
+        static int clampSubdivisionLevel(const int subdivisionLevel)
+        {
+            return std::max(0, std::min(subdivisionLevel, 8));
+        }
+
+        bool parametersAreValid() const
+        {
+            return (rx_ > 0.0 &&
+                    ry_ > 0.0 &&
+                    rz_ > 0.0 &&
+                    ee_ > 0.0 &&
+                    en_ > 0.0 &&
+                    subdivisionLevel_ >= 0);
+        }
+
+        double implicitFunctionValueOnly(const double3& point) const
+        {
+            const double inverseRadiusX = 1.0 / rx_;
+            const double inverseRadiusY = 1.0 / ry_;
+            const double inverseRadiusZ = 1.0 / rz_;
+
+            const double normalizedAbsoluteX = std::fabs(point.x * inverseRadiusX);
+            const double normalizedAbsoluteY = std::fabs(point.y * inverseRadiusY);
+            const double normalizedAbsoluteZ = std::fabs(point.z * inverseRadiusZ);
+
+            const double exponentXY = 2.0 / ee_;
+            const double exponentZ = 2.0 / en_;
+            const double outerExponent = ee_ / en_;
+
+            const double xTerm = Utility::safeAbsPow(normalizedAbsoluteX, exponentXY);
+            const double yTerm = Utility::safeAbsPow(normalizedAbsoluteY, exponentXY);
+            const double xyTermSum = xTerm + yTerm;
+
+            const double xyBlockValue = Utility::safeAbsPow(xyTermSum, outerExponent);
+            const double zBlockValue = Utility::safeAbsPow(normalizedAbsoluteZ, exponentZ);
+
+            return xyBlockValue + zBlockValue - 1.0;
+        }
+
+        double3 projectUnitDirectionToSuperellipsoid(const double3& direction) const
+        {
+            const double directionLengthSquared = lengthSquared(direction);
+            if (directionLengthSquared <= 1e-30)
+            {
+                return make_double3(0.0, 0.0, 0.0);
+            }
+
+            const double3 dir = direction / std::sqrt(directionLengthSquared);
+
+            const double exponentXY = 2.0 / ee_;
+            const double exponentZ = 2.0 / en_;
+            const double outerExponent = ee_ / en_;
+
+            const double xTerm =
+                Utility::safeAbsPow(std::fabs(dir.x / rx_), exponentXY);
+            const double yTerm =
+                Utility::safeAbsPow(std::fabs(dir.y / ry_), exponentXY);
+            const double zTerm =
+                Utility::safeAbsPow(std::fabs(dir.z / rz_), exponentZ);
+
+            const double scaleMeasure =
+                Utility::safeAbsPow(xTerm + yTerm, outerExponent) + zTerm;
+
+            if (scaleMeasure <= 1e-30)
+            {
+                return make_double3(0.0, 0.0, 0.0);
+            }
+
+            const double radialScale = std::pow(scaleMeasure, -0.5 * en_);
+            return dir * radialScale;
+        }
+
+        static int getMidpointIndex(std::vector<double3>& vertexPosition,
+                                    std::unordered_map<unsigned long long, int>& midpointCache,
+                                    const int index0,
+                                    const int index1)
+        {
+            const int a = std::min(index0, index1);
+            const int b = std::max(index0, index1);
+
+            const unsigned long long key =
+                (static_cast<unsigned long long>(static_cast<unsigned int>(a)) << 32) |
+                static_cast<unsigned int>(b);
+
+            const auto it = midpointCache.find(key);
+            if (it != midpointCache.end()) return it->second;
+
+            const double3 midpoint = normalize(0.5 * (vertexPosition[a] + vertexPosition[b]));
+
+            const int newIndex = static_cast<int>(vertexPosition.size());
+            vertexPosition.push_back(midpoint);
+            midpointCache.emplace(key, newIndex);
+            return newIndex;
+        }
+
+        void buildUnitIcosahedron(std::vector<double3>& vertexPosition,
+                                std::vector<int3>& triangleVertexIndex) const
+        {
+            vertexPosition.clear();
+            triangleVertexIndex.clear();
+
+            const double goldenRatio = 0.5 * (1.0 + std::sqrt(5.0));
+
+            vertexPosition.reserve(12);
+            triangleVertexIndex.reserve(20);
+
+            vertexPosition.push_back(normalize(make_double3(-1.0,  goldenRatio, 0.0)));
+            vertexPosition.push_back(normalize(make_double3( 1.0,  goldenRatio, 0.0)));
+            vertexPosition.push_back(normalize(make_double3(-1.0, -goldenRatio, 0.0)));
+            vertexPosition.push_back(normalize(make_double3( 1.0, -goldenRatio, 0.0)));
+
+            vertexPosition.push_back(normalize(make_double3(0.0, -1.0,  goldenRatio)));
+            vertexPosition.push_back(normalize(make_double3(0.0,  1.0,  goldenRatio)));
+            vertexPosition.push_back(normalize(make_double3(0.0, -1.0, -goldenRatio)));
+            vertexPosition.push_back(normalize(make_double3(0.0,  1.0, -goldenRatio)));
+
+            vertexPosition.push_back(normalize(make_double3( goldenRatio, 0.0, -1.0)));
+            vertexPosition.push_back(normalize(make_double3( goldenRatio, 0.0,  1.0)));
+            vertexPosition.push_back(normalize(make_double3(-goldenRatio, 0.0, -1.0)));
+            vertexPosition.push_back(normalize(make_double3(-goldenRatio, 0.0,  1.0)));
+
+            triangleVertexIndex.push_back(make_int3(0, 11, 5));
+            triangleVertexIndex.push_back(make_int3(0, 5, 1));
+            triangleVertexIndex.push_back(make_int3(0, 1, 7));
+            triangleVertexIndex.push_back(make_int3(0, 7, 10));
+            triangleVertexIndex.push_back(make_int3(0, 10, 11));
+
+            triangleVertexIndex.push_back(make_int3(1, 5, 9));
+            triangleVertexIndex.push_back(make_int3(5, 11, 4));
+            triangleVertexIndex.push_back(make_int3(11, 10, 2));
+            triangleVertexIndex.push_back(make_int3(10, 7, 6));
+            triangleVertexIndex.push_back(make_int3(7, 1, 8));
+
+            triangleVertexIndex.push_back(make_int3(3, 9, 4));
+            triangleVertexIndex.push_back(make_int3(3, 4, 2));
+            triangleVertexIndex.push_back(make_int3(3, 2, 6));
+            triangleVertexIndex.push_back(make_int3(3, 6, 8));
+            triangleVertexIndex.push_back(make_int3(3, 8, 9));
+
+            triangleVertexIndex.push_back(make_int3(4, 9, 5));
+            triangleVertexIndex.push_back(make_int3(2, 4, 11));
+            triangleVertexIndex.push_back(make_int3(6, 2, 10));
+            triangleVertexIndex.push_back(make_int3(8, 6, 7));
+            triangleVertexIndex.push_back(make_int3(9, 8, 1));
+        }
+
+        void orientTrianglesOutward(const std::vector<double3>& vertexPosition,
+                                    std::vector<int3>& triangleVertexIndex) const
+        {
+            for (size_t triangleIndex = 0; triangleIndex < triangleVertexIndex.size(); ++triangleIndex)
+            {
+                int3& triangle = triangleVertexIndex[triangleIndex];
+
+                const double3& v0 = vertexPosition[triangle.x];
+                const double3& v1 = vertexPosition[triangle.y];
+                const double3& v2 = vertexPosition[triangle.z];
+
+                const double3 faceCenter = (v0 + v1 + v2) / 3.0;
+                const double3 faceNormal = cross(v1 - v0, v2 - v0);
+
+                if (dot(faceNormal, faceCenter) < 0.0)
+                {
+                    std::swap(triangle.y, triangle.z);
+                }
+            }
+        }
+
+        void subdivideUnitSphereMesh(std::vector<double3>& vertexPosition,
+                                    std::vector<int3>& triangleVertexIndex) const
+        {
+            std::unordered_map<unsigned long long, int> midpointCache;
+            midpointCache.reserve(triangleVertexIndex.size() * 3);
+
+            std::vector<int3> refinedTriangleVertexIndex;
+            refinedTriangleVertexIndex.reserve(triangleVertexIndex.size() * 4);
+
+            for (size_t triangleIndex = 0; triangleIndex < triangleVertexIndex.size(); ++triangleIndex)
+            {
+                const int3 triangle = triangleVertexIndex[triangleIndex];
+
+                const int i0 = triangle.x;
+                const int i1 = triangle.y;
+                const int i2 = triangle.z;
+
+                const int i01 = getMidpointIndex(vertexPosition, midpointCache, i0, i1);
+                const int i12 = getMidpointIndex(vertexPosition, midpointCache, i1, i2);
+                const int i20 = getMidpointIndex(vertexPosition, midpointCache, i2, i0);
+
+                refinedTriangleVertexIndex.push_back(make_int3(i0,  i01, i20));
+                refinedTriangleVertexIndex.push_back(make_int3(i1,  i12, i01));
+                refinedTriangleVertexIndex.push_back(make_int3(i2,  i20, i12));
+                refinedTriangleVertexIndex.push_back(make_int3(i01, i12, i20));
+            }
+
+            triangleVertexIndex.swap(refinedTriangleVertexIndex);
+        }
+
+        void projectSphereMeshToSuperellipsoid(std::vector<double3>& vertexPosition) const
+        {
+            for (size_t vertexIndex = 0; vertexIndex < vertexPosition.size(); ++vertexIndex)
+            {
+                vertexPosition[vertexIndex] = projectUnitDirectionToSuperellipsoid(vertexPosition[vertexIndex]);
+            }
+        }
+
+        void rebuildMesh()
+        {
+            clearMesh();
+
+            if (!parametersAreValid()) return;
+
+            std::vector<double3> vertexPosition;
+            std::vector<int3> triangleVertexIndex;
+
+            buildUnitIcosahedron(vertexPosition, triangleVertexIndex);
+            orientTrianglesOutward(vertexPosition, triangleVertexIndex);
+
+            for (int level = 0; level < subdivisionLevel_; ++level)
+            {
+                subdivideUnitSphereMesh(vertexPosition, triangleVertexIndex);
+                orientTrianglesOutward(vertexPosition, triangleVertexIndex);
+            }
+
+            projectSphereMeshToSuperellipsoid(vertexPosition);
+            orientTrianglesOutward(vertexPosition, triangleVertexIndex);
+
+            setMeshInternal(vertexPosition, triangleVertexIndex);
+        }
 
     public:
         // =========================
         // Rule of Five
         // =========================
-        SuperellipsoidParticle() = default;
+        Superellipsoid() = default;
 
-        SuperellipsoidParticle(const double rx,
-                               const double ry,
-                               const double rz,
-                               const double ee,
-                               const double en)
+        Superellipsoid(const double rx,
+                            const double ry,
+                            const double rz,
+                            const double ee,
+                            const double en,
+                            const int subdivisionLevel = 4)
             : rx_(rx),
-              ry_(ry),
-              rz_(rz),
-              ee_(ee),
-              en_(en)
+            ry_(ry),
+            rz_(rz),
+            ee_(ee),
+            en_(en),
+            subdivisionLevel_(clampSubdivisionLevel(subdivisionLevel))
         {
+            rebuildMesh();
         }
 
-        ~SuperellipsoidParticle() override = default;
-        SuperellipsoidParticle(const SuperellipsoidParticle&) = default;
-        SuperellipsoidParticle(SuperellipsoidParticle&&) noexcept = default;
-        SuperellipsoidParticle& operator=(const SuperellipsoidParticle&) = default;
-        SuperellipsoidParticle& operator=(SuperellipsoidParticle&&) noexcept = default;
+        ~Superellipsoid() override = default;
+        Superellipsoid(const Superellipsoid&) = default;
+        Superellipsoid(Superellipsoid&&) noexcept = default;
+        Superellipsoid& operator=(const Superellipsoid&) = default;
+        Superellipsoid& operator=(Superellipsoid&&) noexcept = default;
 
         // =========================
         // Host operations
         // =========================
         void setParams(const double rx,
-                       const double ry,
-                       const double rz,
-                       const double ee,
-                       const double en)
+                    const double ry,
+                    const double rz,
+                    const double ee,
+                    const double en,
+                    const int subdivisionLevel = 4)
         {
             rx_ = rx;
             ry_ = ry;
             rz_ = rz;
             ee_ = ee;
             en_ = en;
-            clearGrid();
+            subdivisionLevel_ = clampSubdivisionLevel(subdivisionLevel);
+            rebuildMesh();
+        }
+
+        void setSubdivisionLevel(const int subdivisionLevel)
+        {
+            subdivisionLevel_ = clampSubdivisionLevel(subdivisionLevel);
+            rebuildMesh();
         }
 
         // =========================
@@ -607,18 +1258,14 @@ namespace LevelSetObject
         // =========================
         bool isValid() const override
         {
-            return (rx_ > 0.0 &&
-                    ry_ > 0.0 &&
-                    rz_ > 0.0 &&
-                    ee_ > 0.0 &&
-                    en_ > 0.0);
+            return parametersAreValid() && TriangleMeshParticle::isValid();
         }
 
         void evaluateImplicitFunctionValueAndGradient(double& implicitFunctionValue,
-                                                      double3& implicitFunctionGradient,
-                                                      const double3& point) const override
+                                                    double3& implicitFunctionGradient,
+                                                    const double3& point) const override
         {
-            if (!isValid())
+            if (!parametersAreValid())
             {
                 implicitFunctionValue = 1.0;
                 implicitFunctionGradient = make_double3(0.0, 0.0, 0.0);
@@ -687,6 +1334,10 @@ namespace LevelSetObject
             implicitFunctionGradient = make_double3(derivativeOfXYBlockWithRespectToX,
                                                     derivativeOfXYBlockWithRespectToY,
                                                     derivativeOfZBlockWithRespectToZ);
+
+            Utility::applyLevelSetSign(implicitFunctionValue,
+            implicitFunctionGradient,
+            levelSetPositiveInside_);
         }
 
         double3 boundingBoxMin() const override
@@ -700,14 +1351,6 @@ namespace LevelSetObject
         }
 
         // =========================
-        // Surface point generation
-        // =========================
-        std::vector<double3> generateSurfacePointsUniform(const int numSurfacePoints = 10000) const
-        {
-            return generateSurfacePointsUniform_StarShaped(*this, numSurfacePoints);
-        }
-
-        // =========================
         // Getters
         // =========================
         double rx() const { return rx_; }
@@ -715,324 +1358,6 @@ namespace LevelSetObject
         double rz() const { return rz_; }
         double ee() const { return ee_; }
         double en() const { return en_; }
-    };
-
-    //=========================================================================
-    // Triangle mesh particle
-    //=========================================================================
-    class TriangleMeshParticle : public Base
-    {
-    protected:
-        // =========================
-        // Fields
-        // =========================
-        std::vector<double3> vertexPosition_;
-        std::vector<int3> triangleVertexIndex_;
-
-        double3 boundingBoxMin_ {0.0, 0.0, 0.0};
-        double3 boundingBoxMax_ {0.0, 0.0, 0.0};
-
-    protected:
-        // =========================
-        // Helpers
-        // =========================
-        static inline double solidAngleFromPointToTriangle(const double3& queryPoint,
-                                                           const double3& triangleVertex0,
-                                                           const double3& triangleVertex1,
-                                                           const double3& triangleVertex2)
-        {
-            const double3 r0 = triangleVertex0 - queryPoint;
-            const double3 r1 = triangleVertex1 - queryPoint;
-            const double3 r2 = triangleVertex2 - queryPoint;
-
-            const double l0 = length(r0);
-            const double l1 = length(r1);
-            const double l2 = length(r2);
-
-            if (l0 < 1e-30 || l1 < 1e-30 || l2 < 1e-30) return 0.0;
-
-            const double numerator = dot(r0, cross(r1, r2));
-            const double denominator =
-                l0 * l1 * l2 +
-                dot(r0, r1) * l2 +
-                dot(r1, r2) * l0 +
-                dot(r2, r0) * l1;
-
-            return 2.0 * std::atan2(numerator, denominator);
-        }
-
-        static inline double3 closestPointOnTriangle(const double3& queryPoint,
-                                                     const double3& triangleVertex0,
-                                                     const double3& triangleVertex1,
-                                                     const double3& triangleVertex2)
-        {
-            const double3 edge0 = triangleVertex1 - triangleVertex0;
-            const double3 edge1 = triangleVertex2 - triangleVertex0;
-            const double3 vertex0ToPoint = queryPoint - triangleVertex0;
-
-            const double d1 = dot(edge0, vertex0ToPoint);
-            const double d2 = dot(edge1, vertex0ToPoint);
-            if (d1 <= 0.0 && d2 <= 0.0) return triangleVertex0;
-
-            const double3 vertex1ToPoint = queryPoint - triangleVertex1;
-            const double d3 = dot(edge0, vertex1ToPoint);
-            const double d4 = dot(edge1, vertex1ToPoint);
-            if (d3 >= 0.0 && d4 <= d3) return triangleVertex1;
-
-            const double edgeRegion01Determinant = d1 * d4 - d3 * d2;
-            if (edgeRegion01Determinant <= 0.0 && d1 >= 0.0 && d3 <= 0.0)
-            {
-                const double barycentricCoordinate = d1 / (d1 - d3);
-                return triangleVertex0 + barycentricCoordinate * edge0;
-            }
-
-            const double3 vertex2ToPoint = queryPoint - triangleVertex2;
-            const double d5 = dot(edge0, vertex2ToPoint);
-            const double d6 = dot(edge1, vertex2ToPoint);
-            if (d6 >= 0.0 && d5 <= d6) return triangleVertex2;
-
-            const double edgeRegion02Determinant = d5 * d2 - d1 * d6;
-            if (edgeRegion02Determinant <= 0.0 && d2 >= 0.0 && d6 <= 0.0)
-            {
-                const double barycentricCoordinate = d2 / (d2 - d6);
-                return triangleVertex0 + barycentricCoordinate * edge1;
-            }
-
-            const double edgeRegion12Determinant = d3 * d6 - d5 * d4;
-            if (edgeRegion12Determinant <= 0.0 && (d4 - d3) >= 0.0 && (d5 - d6) >= 0.0)
-            {
-                const double3 edge12 = triangleVertex2 - triangleVertex1;
-                const double barycentricCoordinate =
-                    (d4 - d3) / ((d4 - d3) + (d5 - d6));
-                return triangleVertex1 + barycentricCoordinate * edge12;
-            }
-
-            const double denominator =
-                1.0 / (edgeRegion01Determinant + edgeRegion02Determinant + edgeRegion12Determinant);
-
-            const double barycentricCoordinateV = edgeRegion02Determinant * denominator;
-            const double barycentricCoordinateW = edgeRegion12Determinant * denominator;
-
-            return triangleVertex0 + barycentricCoordinateV * edge0 + barycentricCoordinateW * edge1;
-        }
-
-        bool isPointInsideClosedTriangleMesh(const double3& point) const
-        {
-            double totalSolidAngle = 0.0;
-
-            for (size_t triangleIndex = 0; triangleIndex < triangleVertexIndex_.size(); ++triangleIndex)
-            {
-                const int3 triangle = triangleVertexIndex_[triangleIndex];
-
-                const double3& triangleVertex0 = vertexPosition_[triangle.x];
-                const double3& triangleVertex1 = vertexPosition_[triangle.y];
-                const double3& triangleVertex2 = vertexPosition_[triangle.z];
-
-                totalSolidAngle += solidAngleFromPointToTriangle(point,
-                                                                 triangleVertex0,
-                                                                 triangleVertex1,
-                                                                 triangleVertex2);
-            }
-
-            const double windingNumber = totalSolidAngle / (4.0 * M_PI);
-            return std::fabs(windingNumber) > 0.5;
-        }
-
-        void updateBoundingBoxFromMesh()
-        {
-            if (vertexPosition_.empty())
-            {
-                boundingBoxMin_ = make_double3(0.0, 0.0, 0.0);
-                boundingBoxMax_ = make_double3(0.0, 0.0, 0.0);
-                return;
-            }
-
-            boundingBoxMin_ = vertexPosition_.front();
-            boundingBoxMax_ = vertexPosition_.front();
-
-            for (size_t vertexIndex = 1; vertexIndex < vertexPosition_.size(); ++vertexIndex)
-            {
-                const double3& vertex = vertexPosition_[vertexIndex];
-
-                boundingBoxMin_.x = std::min(boundingBoxMin_.x, vertex.x);
-                boundingBoxMin_.y = std::min(boundingBoxMin_.y, vertex.y);
-                boundingBoxMin_.z = std::min(boundingBoxMin_.z, vertex.z);
-
-                boundingBoxMax_.x = std::max(boundingBoxMax_.x, vertex.x);
-                boundingBoxMax_.y = std::max(boundingBoxMax_.y, vertex.y);
-                boundingBoxMax_.z = std::max(boundingBoxMax_.z, vertex.z);
-            }
-        }
-
-        void setMeshInternal(const std::vector<double3>& vertexPosition,
-                             const std::vector<int3>& triangleVertexIndex)
-        {
-            vertexPosition_ = vertexPosition;
-            triangleVertexIndex_ = triangleVertexIndex;
-            updateBoundingBoxFromMesh();
-            clearGrid();
-        }
-
-    public:
-        // =========================
-        // Rule of Five
-        // =========================
-        TriangleMeshParticle() = default;
-
-        TriangleMeshParticle(const std::vector<double3>& vertexPosition,
-                             const std::vector<int3>& triangleVertexIndex)
-            : vertexPosition_(vertexPosition),
-              triangleVertexIndex_(triangleVertexIndex)
-        {
-            updateBoundingBoxFromMesh();
-        }
-
-        ~TriangleMeshParticle() override = default;
-        TriangleMeshParticle(const TriangleMeshParticle&) = default;
-        TriangleMeshParticle(TriangleMeshParticle&&) noexcept = default;
-        TriangleMeshParticle& operator=(const TriangleMeshParticle&) = default;
-        TriangleMeshParticle& operator=(TriangleMeshParticle&&) noexcept = default;
-
-        // =========================
-        // Host operations
-        // =========================
-        void setMesh(const std::vector<double3>& vertexPosition,
-                     const std::vector<int3>& triangleVertexIndex)
-        {
-            setMeshInternal(vertexPosition, triangleVertexIndex);
-        }
-
-        void clearMesh()
-        {
-            vertexPosition_.clear();
-            triangleVertexIndex_.clear();
-            updateBoundingBoxFromMesh();
-            clearGrid();
-        }
-
-        // =========================
-        // Virtual interfaces
-        // =========================
-        bool isValid() const override
-        {
-            if (vertexPosition_.empty()) return false;
-            if (triangleVertexIndex_.empty()) return false;
-
-            for (size_t triangleIndex = 0; triangleIndex < triangleVertexIndex_.size(); ++triangleIndex)
-            {
-                const int3 triangle = triangleVertexIndex_[triangleIndex];
-
-                if (triangle.x < 0 || triangle.y < 0 || triangle.z < 0) return false;
-                if (triangle.x >= int(vertexPosition_.size())) return false;
-                if (triangle.y >= int(vertexPosition_.size())) return false;
-                if (triangle.z >= int(vertexPosition_.size())) return false;
-
-                if (triangle.x == triangle.y || triangle.y == triangle.z || triangle.z == triangle.x)
-                    return false;
-            }
-
-            return true;
-        }
-
-        void evaluateImplicitFunctionValueAndGradient(double& implicitFunctionValue,
-                                                      double3& implicitFunctionGradient,
-                                                      const double3& point) const override
-        {
-            if (!isValid())
-            {
-                implicitFunctionValue = 1.0;
-                implicitFunctionGradient = make_double3(0.0, 0.0, 0.0);
-                return;
-            }
-
-            double minimumDistanceSquared = std::numeric_limits<double>::max();
-            double3 closestPointOnSurface = make_double3(0.0, 0.0, 0.0);
-
-            for (size_t triangleIndex = 0; triangleIndex < triangleVertexIndex_.size(); ++triangleIndex)
-            {
-                const int3 triangle = triangleVertexIndex_[triangleIndex];
-
-                const double3& triangleVertex0 = vertexPosition_[triangle.x];
-                const double3& triangleVertex1 = vertexPosition_[triangle.y];
-                const double3& triangleVertex2 = vertexPosition_[triangle.z];
-
-                const double3 candidateClosestPoint =
-                    closestPointOnTriangle(point,
-                                           triangleVertex0,
-                                           triangleVertex1,
-                                           triangleVertex2);
-
-                const double candidateDistanceSquared =
-                    lengthSquared(point - candidateClosestPoint);
-
-                if (candidateDistanceSquared < minimumDistanceSquared)
-                {
-                    minimumDistanceSquared = candidateDistanceSquared;
-                    closestPointOnSurface = candidateClosestPoint;
-                }
-            }
-
-            const double unsignedDistance = std::sqrt(std::max(0.0, minimumDistanceSquared));
-            const bool isInsideParticle = isPointInsideClosedTriangleMesh(point);
-
-            implicitFunctionValue = isInsideParticle ? -unsignedDistance : unsignedDistance;
-
-            if (unsignedDistance > 1e-30)
-            {
-                const double3 surfaceToPointDirection =
-                    (point - closestPointOnSurface) / unsignedDistance;
-
-                implicitFunctionGradient =
-                    isInsideParticle ? (-surfaceToPointDirection) : surfaceToPointDirection;
-            }
-            else
-            {
-                implicitFunctionGradient = make_double3(0.0, 0.0, 0.0);
-            }
-        }
-
-        double3 boundingBoxMin() const override
-        {
-            return boundingBoxMin_;
-        }
-
-        double3 boundingBoxMax() const override
-        {
-            return boundingBoxMax_;
-        }
-
-        // =========================
-        // Getters
-        // =========================
-        const std::vector<double3>& vertexPosition() const
-        {
-            return vertexPosition_;
-        }
-
-        std::vector<double3>& vertexPosition()
-        {
-            return vertexPosition_;
-        }
-
-        const std::vector<int3>& triangleVertexIndex() const
-        {
-            return triangleVertexIndex_;
-        }
-
-        std::vector<int3>& triangleVertexIndex()
-        {
-            return triangleVertexIndex_;
-        }
-
-        const double3& meshBoundingBoxMin() const
-        {
-            return boundingBoxMin_;
-        }
-
-        const double3& meshBoundingBoxMax() const
-        {
-            return boundingBoxMax_;
-        }
     };
 
     class Sphere : public TriangleMeshParticle
@@ -1044,9 +1369,6 @@ namespace LevelSetObject
         double radius_ {0.0};
 
         size_t targetSurfacePointCount_ {0};
-        int subdivisionLevel_ {0};
-
-        bool levelSetPositiveInside_ {false};
 
     protected:
         // =========================
@@ -1212,7 +1534,6 @@ namespace LevelSetObject
 
         static void generateSphereMesh(const double radius,
                                     const size_t targetSurfacePointCount,
-                                    int& subdivisionLevel,
                                     std::vector<double3>& vertexPosition,
                                     std::vector<int3>& triangleVertexIndex)
         {
@@ -1226,7 +1547,7 @@ namespace LevelSetObject
                 throw std::invalid_argument("Sphere::generateSphereMesh: targetSurfacePointCount must be >= 4.");
             }
 
-            subdivisionLevel = estimateSubdivisionLevelAtLeast(targetSurfacePointCount);
+            int subdivisionLevel = estimateSubdivisionLevelAtLeast(targetSurfacePointCount);
 
             createIcosahedron(radius, vertexPosition, triangleVertexIndex);
 
@@ -1240,7 +1561,6 @@ namespace LevelSetObject
         {
             if (radius_ <= 0.0 || targetSurfacePointCount_ < 4)
             {
-                subdivisionLevel_ = 0;
                 clearMesh();
                 return;
             }
@@ -1250,7 +1570,6 @@ namespace LevelSetObject
 
             generateSphereMesh(radius_,
                             targetSurfacePointCount_,
-                            subdivisionLevel_,
                             vertexPosition,
                             triangleVertexIndex);
 
@@ -1264,22 +1583,9 @@ namespace LevelSetObject
         Sphere() = default;
 
         Sphere(const double radius,
-            const size_t targetSurfacePointCount,
-            const bool levelSetPositiveInside = false)
+            const size_t targetSurfacePointCount)
             :radius_(radius),
-            targetSurfacePointCount_(targetSurfacePointCount),
-            levelSetPositiveInside_(levelSetPositiveInside)
-        {
-            rebuildMesh();
-        }
-
-        Sphere(const double3& center,
-            const double radius,
-            const size_t targetSurfacePointCount,
-            const bool levelSetPositiveInside = false)
-            :radius_(radius),
-            targetSurfacePointCount_(targetSurfacePointCount),
-            levelSetPositiveInside_(levelSetPositiveInside)
+            targetSurfacePointCount_(targetSurfacePointCount)
         {
             rebuildMesh();
         }
@@ -1293,38 +1599,18 @@ namespace LevelSetObject
         // =========================
         // Host operations
         // =========================
-        void setSphere(const double radius,
-                    const size_t targetSurfacePointCount,
-                    const bool levelSetPositiveInside = true)
+        void setParams(const double radius,
+                    const size_t targetSurfacePointCount)
         {
             radius_ = radius;
             targetSurfacePointCount_ = targetSurfacePointCount;
-            levelSetPositiveInside_ = levelSetPositiveInside;
             rebuildMesh();
-        }
-
-        void setRadius(const double radius)
-        {
-            radius_ = radius;
-            rebuildMesh();
-        }
-
-        void setTargetSurfacePointCount(const size_t targetSurfacePointCount)
-        {
-            targetSurfacePointCount_ = targetSurfacePointCount;
-            rebuildMesh();
-        }
-
-        void setLevelSetPositiveInside(const bool levelSetPositiveInside)
-        {
-            levelSetPositiveInside_ = levelSetPositiveInside;
         }
 
         void clearSphere()
         {
             radius_ = 0.0;
             targetSurfacePointCount_ = 0;
-            subdivisionLevel_ = 0;
             levelSetPositiveInside_ = false;
             clearMesh();
         }
@@ -1352,24 +1638,13 @@ namespace LevelSetObject
 
             const double distanceToCenter = length(point);
 
-            const double baseImplicitFunctionValue = distanceToCenter - radius_;
+            implicitFunctionValue = distanceToCenter - radius_;
 
-            double3 baseImplicitFunctionGradient = make_double3(0.0, 0.0, 0.0);
-            if (distanceToCenter > 1e-30)
-            {
-                baseImplicitFunctionGradient = point / distanceToCenter;
-            }
+            if (distanceToCenter > 1e-30) implicitFunctionGradient = point / distanceToCenter;
 
-            if (levelSetPositiveInside_)
-            {
-                implicitFunctionValue = -baseImplicitFunctionValue;
-                implicitFunctionGradient = -baseImplicitFunctionGradient;
-            }
-            else
-            {
-                implicitFunctionValue = baseImplicitFunctionValue;
-                implicitFunctionGradient = baseImplicitFunctionGradient;
-            }
+            Utility::applyLevelSetSign(implicitFunctionValue,
+                                       implicitFunctionGradient,
+                                       levelSetPositiveInside_);
         }
 
         double3 boundingBoxMin() const override
@@ -1389,31 +1664,6 @@ namespace LevelSetObject
         {
             return radius_;
         }
-
-        size_t targetSurfacePointCount() const
-        {
-            return targetSurfacePointCount_;
-        }
-
-        int subdivisionLevel() const
-        {
-            return subdivisionLevel_;
-        }
-
-        bool levelSetPositiveInside() const
-        {
-            return levelSetPositiveInside_;
-        }
-
-        size_t numVertices() const
-        {
-            return vertexPosition_.size();
-        }
-
-        size_t numTriangles() const
-        {
-            return triangleVertexIndex_.size();
-        }
     };
 
     //=========================================================================
@@ -1428,13 +1678,12 @@ namespace LevelSetObject
         double lx_ {1.0};
         double ly_ {1.0};
         double lz_ {1.0};
-        bool levelSetPositiveInside_ {true};
 
     protected:
         // =========================
         // Helpers
         // =========================
-        void updateMesh()
+        void rebuildMesh()
         {
             std::vector<double3> vertices;
             std::vector<int3> faces;
@@ -1486,18 +1735,17 @@ namespace LevelSetObject
         // =========================
         // Rule of Five
         // =========================
-        BoxWall() = default;
+        BoxWall() { levelSetPositiveInside_ = true; }
 
         BoxWall(const double lx,
                 const double ly,
-                const double lz,
-                const bool levelSetPositiveInside = true)
+                const double lz)
             : lx_(lx),
               ly_(ly),
-              lz_(lz),
-              levelSetPositiveInside_(levelSetPositiveInside)
+              lz_(lz)
         {
-            updateMesh();
+            levelSetPositiveInside_ = true;
+            rebuildMesh();
         }
 
         ~BoxWall() override = default;
@@ -1511,14 +1759,12 @@ namespace LevelSetObject
         // =========================
         void setParams(const double lx,
                        const double ly,
-                       const double lz,
-                       const bool levelSetPositiveInside = true)
+                       const double lz)
         {
             lx_ = lx;
             ly_ = ly;
             lz_ = lz;
-            levelSetPositiveInside_ = levelSetPositiveInside;
-            updateMesh();
+            rebuildMesh();
             clearGrid();
         }
 
@@ -1623,7 +1869,6 @@ namespace LevelSetObject
         double lx() const { return lx_; }
         double ly() const { return ly_; }
         double lz() const { return lz_; }
-        bool levelSetPositiveInside() const { return levelSetPositiveInside_; }
     };
 
     //=========================================================================
@@ -1638,16 +1883,15 @@ namespace LevelSetObject
         double3 pointA_ {0.0, 0.0, -0.5};
         double3 pointB_ {0.0, 0.0,  0.5};
         double radius_ {1.0};
-        bool levelSetPositiveInside_ {true};
 
-        int numSegmentsCircumference_ {32};
+        int numSegmentsCircumference_ {256};
         int numSegmentsAxial_ {1};
 
     protected:
         // =========================
         // Helpers
         // =========================
-        void updateMesh()
+        void rebuildMesh()
         {
             std::vector<double3> vertices;
             std::vector<int3> faces;
@@ -1745,22 +1989,21 @@ namespace LevelSetObject
         // =========================
         // Rule of Five
         // =========================
-        CylinderWall() = default;
+        CylinderWall() { levelSetPositiveInside_ = true; }
 
         CylinderWall(const double3& pointA,
                      const double3& pointB,
                      const double radius,
-                     const bool levelSetPositiveInside = true,
-                     const int numSegmentsCircumference = 32,
+                     const int numSegmentsCircumference = 256,
                      const int numSegmentsAxial = 1)
             : pointA_(pointA),
               pointB_(pointB),
               radius_(radius),
-              levelSetPositiveInside_(levelSetPositiveInside),
               numSegmentsCircumference_(std::max(3, numSegmentsCircumference)),
               numSegmentsAxial_(std::max(1, numSegmentsAxial))
         {
-            updateMesh();
+            levelSetPositiveInside_ = true;
+            rebuildMesh();
         }
 
         ~CylinderWall() override = default;
@@ -1772,14 +2015,18 @@ namespace LevelSetObject
         // =========================
         // Host operations
         // =========================
-        void setGeometry(const double3& pointA,
+        void setParams(const double3& pointA,
                          const double3& pointB,
-                         const double radius)
+                         const double radius,
+                         const int numSegmentsCircumference = 256,
+                         const int numSegmentsAxial = 1)
         {
             pointA_ = pointA;
             pointB_ = pointB;
             radius_ = radius;
-            updateMesh();
+            numSegmentsCircumference_ = std::max(3, numSegmentsCircumference);
+            numSegmentsAxial_ = std::max(1, numSegmentsAxial);
+            rebuildMesh();
             clearGrid();
         }
 
@@ -1788,13 +2035,7 @@ namespace LevelSetObject
         {
             numSegmentsCircumference_ = std::max(3, numSegmentsCircumference);
             numSegmentsAxial_ = std::max(1, numSegmentsAxial);
-            updateMesh();
-            clearGrid();
-        }
-
-        void setLevelSetSign(const bool levelSetPositiveInside)
-        {
-            levelSetPositiveInside_ = levelSetPositiveInside;
+            rebuildMesh();
             clearGrid();
         }
 
@@ -1803,13 +2044,12 @@ namespace LevelSetObject
         // =========================
         bool isValid() const override
         {
-            return (radius_ > 0.0 &&
-                    length(pointB_ - pointA_) > 1e-30);
+            return (radius_ > 0.0 && length(pointB_ - pointA_) > 1e-30);
         }
 
         void evaluateImplicitFunctionValueAndGradient(double& implicitFunctionValue,
-                                                      double3& implicitFunctionGradient,
-                                                      const double3& point) const override
+                                                    double3& implicitFunctionGradient,
+                                                    const double3& point) const override
         {
             if (!isValid())
             {
@@ -1821,88 +2061,53 @@ namespace LevelSetObject
             const double3 axisVector = pointB_ - pointA_;
             const double axisLength = length(axisVector);
             const double3 axisDirection = axisVector / axisLength;
-
             const double3 pointRelativeToA = point - pointA_;
             const double axialCoordinate = dot(pointRelativeToA, axisDirection);
+            const double clampedAxialCoordinate = Utility::clampValue(axialCoordinate, 0.0, axisLength);
+            const double3 closestPointOnAxisSegment = pointA_ + clampedAxialCoordinate * axisDirection;
 
-            const double clampedAxialCoordinate =
-                Utility::clampValue(axialCoordinate, 0.0, axisLength);
-            const double3 closestPointOnAxisSegment =
-                pointA_ + clampedAxialCoordinate * axisDirection;
+            bool inRadialRange = (length(cross(pointRelativeToA, axisDirection)) <= radius_);
+            bool inAxialRange = (axialCoordinate >= 0. && axialCoordinate <= axisLength);
 
-            const double3 radialVector = point - closestPointOnAxisSegment;
-            const double radialDistance = length(radialVector);
-
-            const double radialSignedDistance = radialDistance - radius_;
-            const double axialSignedDistance =
-                (axialCoordinate < 0.0) ? (-axialCoordinate) :
-                (axialCoordinate > axisLength ? (axialCoordinate - axisLength) : 0.0);
-
-            const double outsideRadial = std::max(radialSignedDistance, 0.0);
-            const double outsideAxial = std::max(axialSignedDistance, 0.0);
-
-            const double outsideDistance =
-                std::sqrt(outsideRadial * outsideRadial + outsideAxial * outsideAxial);
-
-            const double insideDistance =
-                std::min(std::max(radialSignedDistance, axialSignedDistance), 0.0);
-
-            double signedDistanceValue = outsideDistance + insideDistance;
-            double3 signedDistanceGradient = make_double3(0.0, 0.0, 0.0);
-
-            if (outsideDistance > 1e-30)
+            if (inRadialRange && inAxialRange)
             {
-                double3 radialDirection = make_double3(0.0, 0.0, 0.0);
-                if (radialDistance > 1e-30)
+                const double3 radialVector = point - closestPointOnAxisSegment;
+                const double radialDistance = length(radialVector);
+                const double radialSignedDistance = radialDistance - radius_;
+                const double axialSignedDistance = axialCoordinate < 0.5 * axisLength ? -axialCoordinate : axialCoordinate - axisLength;
+                const double radialAbsoluteDistance = std::abs(radialSignedDistance);
+                const double axialAbsoluteDistance = std::abs(axialSignedDistance);
+                if (radialAbsoluteDistance <= axialAbsoluteDistance) 
                 {
-                    radialDirection = radialVector / radialDistance;
+                    implicitFunctionValue = radialSignedDistance;
+                    implicitFunctionGradient = normalize(radialVector);
                 }
-
-                double3 axialDirection = make_double3(0.0, 0.0, 0.0);
-                if (axialCoordinate < 0.0) axialDirection = -axisDirection;
-                else if (axialCoordinate > axisLength) axialDirection = axisDirection;
-
-                signedDistanceGradient =
-                    (outsideRadial / outsideDistance) * radialDirection +
-                    (outsideAxial / outsideDistance) * axialDirection;
+                else 
+                {
+                    implicitFunctionValue = axialSignedDistance;
+                    implicitFunctionGradient = axialCoordinate < 0.5 * axisLength ? -axisVector : axisVector;
+                }
+            }
+            else if (!inRadialRange && inAxialRange)
+            {
+                const double3 radialVector = point - closestPointOnAxisSegment;
+                const double radialDistance = length(radialVector);
+                implicitFunctionValue = radialDistance - radius_;
+                implicitFunctionGradient = normalize(radialVector);
+            }
+            else if (!inRadialRange && !inAxialRange)
+            {
+                const double3 closestPointOnSurface = closestPointOnAxisSegment + 
+                normalize(pointRelativeToA - axialCoordinate * axisDirection) * radius_;
+                implicitFunctionValue = length(point - closestPointOnSurface);
+                implicitFunctionGradient = normalize(point - closestPointOnSurface);
             }
             else
             {
-                const double distanceToSideWall = radius_ - radialDistance;
-                const double distanceToCapA = axialCoordinate;
-                const double distanceToCapB = axisLength - axialCoordinate;
-
-                if (distanceToSideWall <= distanceToCapA &&
-                    distanceToSideWall <= distanceToCapB)
-                {
-                    if (radialDistance > 1e-30)
-                    {
-                        signedDistanceGradient = radialVector / radialDistance;
-                    }
-                    else
-                    {
-                        double3 referenceDirection =
-                            (std::fabs(axisDirection.x) < 0.9)
-                            ? make_double3(1.0, 0.0, 0.0)
-                            : make_double3(0.0, 1.0, 0.0);
-
-                        signedDistanceGradient =
-                            normalize(cross(axisDirection, referenceDirection));
-                    }
-                }
-                else if (distanceToCapA <= distanceToCapB)
-                {
-                    signedDistanceGradient = -axisDirection;
-                }
-                else
-                {
-                    signedDistanceGradient = axisDirection;
-                }
+                implicitFunctionValue = axialCoordinate < 0.0 ? -axialCoordinate : axialCoordinate - axisLength;
+                implicitFunctionGradient = axialCoordinate < 0.0 ? -axisVector : axisVector;
             }
-
-            implicitFunctionValue = signedDistanceValue;
-            implicitFunctionGradient = signedDistanceGradient;
-
+            
             Utility::applyLevelSetSign(implicitFunctionValue,
                                        implicitFunctionGradient,
                                        levelSetPositiveInside_);
@@ -1928,9 +2133,6 @@ namespace LevelSetObject
         const double3& pointA() const { return pointA_; }
         const double3& pointB() const { return pointB_; }
         double radius() const { return radius_; }
-        bool levelSetPositiveInside() const { return levelSetPositiveInside_; }
-        int numSegmentsCircumference() const { return numSegmentsCircumference_; }
-        int numSegmentsAxial() const { return numSegmentsAxial_; }
     };
 
 } // namespace LevelSetObject

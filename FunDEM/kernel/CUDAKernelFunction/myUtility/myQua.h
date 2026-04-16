@@ -127,3 +127,66 @@ HOST_DEVICE inline double3 reverseRotateVectorByQuaternion(double3 v, quaternion
     double3 t = cross(q_vec, v) * 2.0;
     return v + (t * q.q0) + cross(q_vec, t);
 }
+
+HOST_DEVICE inline quaternion rotateQuaternion(const quaternion& q, const double3& rotationVector)
+{
+    // =========================
+    // angle = |rotationVector|
+    // =========================
+    const double theta2 =
+        rotationVector.x * rotationVector.x +
+        rotationVector.y * rotationVector.y +
+        rotationVector.z * rotationVector.z;
+
+    if (theta2 < 1e-30) return q;
+
+    const double theta = sqrt(theta2);
+    const double invTheta = 1.0 / theta;
+
+    // =========================
+    // unit axis
+    // =========================
+    const double ux = rotationVector.x * invTheta;
+    const double uy = rotationVector.y * invTheta;
+    const double uz = rotationVector.z * invTheta;
+
+    // =========================
+    // rotation quaternion
+    // =========================
+    const double half = 0.5 * theta;
+    const double c = cos(half);
+    const double s = sin(half);
+
+    const double r0 = c;
+    const double r1 = s * ux;
+    const double r2 = s * uy;
+    const double r3 = s * uz;
+
+    // =========================
+    // Hamilton product (INLINE)
+    // result = q_rot ⊗ q (global)
+    // =========================
+    quaternion result;
+
+    result.q0 = r0*q.q0 - r1*q.q1 - r2*q.q2 - r3*q.q3;
+    result.q1 = r0*q.q1 + r1*q.q0 + r2*q.q3 - r3*q.q2;
+    result.q2 = r0*q.q2 - r1*q.q3 + r2*q.q0 + r3*q.q1;
+    result.q3 = r0*q.q3 + r1*q.q2 - r2*q.q1 + r3*q.q0;
+
+    // =========================
+    // normalize
+    // =========================
+    const double norm = sqrt(result.q0 * result.q0 +
+                                result.q1 * result.q1 +
+                                result.q2 * result.q2 +
+                                result.q3 * result.q3);
+
+    if (norm < 1e-30) return make_quaternion(1.0, 0.0, 0.0, 0.0);
+
+    const double inv = 1.0 / norm;
+
+    return make_quaternion(result.q0 * inv,
+                           result.q1 * inv,
+                           result.q2 * inv,
+                           result.q3 * inv);
+}

@@ -1,3 +1,6 @@
+// NOTE:
+// Most of the code on this page was generated with the assistance of AI tools.
+
 #pragma once
 #include "kernel/CUDAKernelFunction/myUtility/myVec.h"
 #include <algorithm>
@@ -356,7 +359,7 @@ namespace SpherePacking
             const double v = ur01(rng);
 
             const double radialDistance = effectiveCylinderRadius * std::sqrt(u);
-            const double azimuthAngle = 2.0 * M_PI * v;
+            const double azimuthAngle = 2.0 * pi() * v;
 
             const double localU = radialDistance * std::cos(azimuthAngle);
             const double localV = radialDistance * std::sin(azimuthAngle);

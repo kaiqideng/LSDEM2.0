@@ -2,8 +2,6 @@
 #include <vector>
 #include <cuda_runtime.h>
 #include <stdexcept>
-#include <iomanip>
-#include <iostream>
 
 inline void check_cuda_error(cudaError_t result, const char* func, const char* file, int line)
 {
@@ -19,6 +17,8 @@ inline void check_cuda_error(cudaError_t result, const char* func, const char* f
 #define CUDA_CHECK(val) check_cuda_error((val), #val, __FILE__, __LINE__)
 
 #ifndef NDEBUG
+#include <iomanip>
+#include <iostream>
 template <typename T>
 void debug_dump_device_array(const T* d_ptr, std::size_t n, const char* name, cudaStream_t stream = 0)
 {

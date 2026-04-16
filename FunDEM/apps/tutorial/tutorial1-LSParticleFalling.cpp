@@ -12,8 +12,8 @@ inline quaternion randomQuaternionUniform_deterministic()
     const double u1 = U(rng), u2 = U(rng), u3 = U(rng);
     const double s1 = std::sqrt(1.0 - u1);
     const double s2 = std::sqrt(u1);
-    const double a = 2.0 * M_PI * u2;
-    const double b = 2.0 * M_PI * u3;
+    const double a = 2.0 * pi() * u2;
+    const double b = 2.0 * pi() * u3;
 
     return quaternion{
         s2 * std::cos(b),
@@ -47,7 +47,7 @@ public:
 
 int main(const int argc, char** argv)
 {
-    const double l = 1.5;
+    const double l = 1.;
     const double3 boxMin = make_double3(0., 0., 0.);
     const double3 boxMax = make_double3(l, l, 3. * l);
 

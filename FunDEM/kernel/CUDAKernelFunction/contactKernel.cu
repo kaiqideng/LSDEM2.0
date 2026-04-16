@@ -1,5 +1,4 @@
 #include "contactKernel.cuh"
-#include "myVec.h"
 
 /**
  * @brief Atomic add for double on device. Uses native atomicAdd on sm_60+; CAS loop otherwise.
@@ -169,7 +168,7 @@ const size_t numPair)
 	const double3 r_j = position_fp[idx_j];
 	const double3 v_j = velocity_fp[idx_j];
 	const double3 w_j = angularVelocity_fp[idx_j];
-	const double mu_j = frictionCoefficient_fp[idx_i];
+	const double mu_j = frictionCoefficient_fp[idx_j];
 	const double res_j = restitutionCoefficient_fp[idx_j];
 
 	const double3 r_c = contactPoint[k];
@@ -191,6 +190,87 @@ const size_t numPair)
 	slidingElasticEnergy[k] = 0.5 * lengthSquared(epsilon_s) * ks_i;
 	atomicAddDouble3(force_p, idx_i, F_c);
 	atomicAddDouble3(torque_p, idx_i, cross(r_c - r_i, F_c));
+}
+
+__global__ void addGhostLevelSetParticleContactForceTorqueKernel(double3* slidingSpring, 
+double* normalElasticEnergy,
+double* slidingElasticEnergy,
+double3* force_p,
+double3* torque_p,
+
+const double3* contactPoint,
+const double3* contactNormal,
+const double* overlap, 
+const int* boundaryNodePointed, 
+const int* objectPointing, 
+
+const double3* localPosition_bNode,
+const int* particleID_bNode,
+
+const double3* position_p, 
+const double3* velocity_p, 
+const double3* angularVelocity_p, 
+const double* inverseMass_p, 
+const double* normalStiffness_p, 
+const double* shearStiffness_p, 
+const double* frictionCoefficient_p, 
+const double* restitutionCoefficient_p, 
+
+const double3* position_gp, 
+const double3* velocity_gp, 
+
+const double dt,
+const size_t numPair)
+{
+    const size_t k = blockIdx.x * blockDim.x + threadIdx.x;
+	if (k >= numPair) return;
+
+	const int idx_i = particleID_bNode[boundaryNodePointed[k]];
+	const double3 r_i = position_p[idx_i];
+	const double3 v_i = velocity_p[idx_i];
+	const double3 w_i = angularVelocity_p[idx_i];
+	const double invM_i = inverseMass_p[idx_i];
+    const double kn_i = normalStiffness_p[idx_i];
+	const double ks_i = shearStiffness_p[idx_i];
+	const double mu_i = frictionCoefficient_p[idx_i];
+	const double res_i = restitutionCoefficient_p[idx_i];
+
+	const int idx_j = objectPointing[k];
+	const double3 r_j = position_gp[idx_j];
+	const double3 v_j = velocity_gp[idx_j];
+	const double3 w_j = angularVelocity_p[idx_j];
+	const double invM_j = inverseMass_p[idx_j];
+	const double kn_j = normalStiffness_p[idx_j];
+	const double ks_j = shearStiffness_p[idx_j];
+	const double mu_j = frictionCoefficient_p[idx_j];
+	const double res_j = restitutionCoefficient_p[idx_j];
+
+    const double3 r_c = contactPoint[k];
+	const double3 n_ij = contactNormal[k];
+	const double delta = overlap[k];
+	const double3 v_c_ij = v_i + cross(w_i, r_c - r_i) - (v_j + cross(w_j, r_c - r_j));
+	double kn = 0., ks = 0., effM = 0.;
+	if (kn_i > 0. && kn_j > 0.) kn = kn_i * kn_j / (kn_i + kn_j);
+	if (ks_i > 0. && ks_j > 0.) ks = ks_i * ks_j / (ks_i + ks_j);
+	if (invM_i > 0. || invM_j > 0.) effM = 1. / (invM_i + invM_j);
+	const double res = fmin(res_i, res_j);
+	const double mu = fmin(mu_i, mu_j);
+	double3 F_c = make_double3(0., 0., 0.);
+	double3 epsilon_s = slidingSpring[k];
+	LinearContact(F_c, epsilon_s, 
+	v_c_ij, n_ij, delta, dt, 
+	kn, ks, mu, res, effM);
+
+	slidingSpring[k] = epsilon_s;
+	normalElasticEnergy[k] = 0.5 * delta * delta * kn;
+	slidingElasticEnergy[k] = 0.5 * lengthSquared(epsilon_s) * ks;
+	atomicAddDouble3(force_p, idx_i, F_c);
+	atomicAddDouble3(torque_p, idx_i, cross(r_c - r_i, F_c));
+	if (idx_i != idx_j)
+	{
+		atomicAddDouble3(force_p, idx_j, -F_c);
+	    atomicAddDouble3(torque_p, idx_j, cross(r_c - r_j, -F_c));
+	}
 }
 
 __global__ void addBondedForceTorqueKernel(double3* bondPoint,
@@ -397,6 +477,71 @@ cudaStream_t stream)
 	angularVelocity_fp,
 	frictionCoefficient_fp,
 	restitutionCoefficient_fp,
+
+    timeStep,
+
+    numPair);
+}
+
+extern "C" void launchAddGhostLevelSetParticleContactForceTorque(double3* slidingSpring, 
+double* normalElasticEnergy, 
+double* slidingElasticEnergy, 
+const double3* contactPoint, 
+const double3* contactNormal,
+const double* overlap,
+const int* boundaryNodePointed,
+const int* objectPointing,
+
+const double3* localPosition_bNode,
+const int* particleID_bNode,
+
+double3* force_p,
+double3* torque_p,
+const double3* position_p,
+const double3* velocity_p,
+const double3* angularVelocity_p,
+const double* inverseMass_p,
+const double* normalStiffness_p,
+const double* shearStiffness_p,
+const double* frictionCoefficient_p,
+const double* restitutionCoefficient_p,
+
+const double3* position_gp,
+const double3* velocity_gp,
+
+const double timeStep,
+
+const size_t numPair,
+const size_t gridD,
+const size_t blockD,
+cudaStream_t stream)
+{
+    addGhostLevelSetParticleContactForceTorqueKernel<<<gridD, blockD, 0, stream>>>(slidingSpring,
+	normalElasticEnergy, 
+	slidingElasticEnergy, 
+    force_p,
+    torque_p,
+
+    contactPoint,
+    contactNormal,
+    overlap,
+	boundaryNodePointed,
+    objectPointing,
+
+    localPosition_bNode,
+    particleID_bNode,
+
+    position_p,
+    velocity_p,
+    angularVelocity_p,
+	inverseMass_p,
+    normalStiffness_p,
+    shearStiffness_p,
+    frictionCoefficient_p,
+	restitutionCoefficient_p,
+
+	position_gp, 
+	velocity_gp,
 
     timeStep,
 

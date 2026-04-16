@@ -1,3 +1,6 @@
+// NOTE:
+// Most of the code on this page was generated with the assistance of AI tools.
+
 #pragma once
 #include <fstream>
 #include <iostream>

@@ -2,6 +2,7 @@
 #include "LSParticle.h"
 #include "SolidInteraction.h"
 #include "VBondedInteraction.h"
+#include "PeriodicBoundary.h"
 #include "CUDAKernelFunction/LSParticleContactDetectionKernel.cuh"
 #include "CUDAKernelFunction/contactKernel.cuh"
 #include "CUDAKernelFunction/particleIntegrationKernel.cuh"
@@ -10,14 +11,13 @@
 class LSSolver
 {
 public:
-    LSSolver(const std::string dir, cudaStream_t stream = 0, const size_t maxGPUThread = 256, const int device = 0)
+    LSSolver(const std::string dir = "Problem", cudaStream_t stream = 0, const size_t maxGPUThread = 256, const int device = 0)
     {
         dir_ = dir;
         phase_ = 0;
         stream_ = stream;
         maxGPUThread_ = maxGPUThread;
-
-        activateGPUDevice(device);
+        device_ = device;
     }
 
     ~LSSolver() = default;
@@ -162,8 +162,7 @@ public:
         normalStiffness,
         shearStiffness,
         frictionCoefficient, 
-        restitutionCoefficient, 
-        stream_);
+        restitutionCoefficient);
     }
 
     void addLSParticle(const std::vector<double3>& boundaryNodeLocalPosition,
@@ -198,12 +197,11 @@ public:
         normalStiffness, 
         shearStiffness, 
         frictionCoefficient, 
-        restitutionCoefficient, 
-        stream_);
+        restitutionCoefficient);
     }
 
     /**
-     * @brief Add one fixed wall object represented by a level-set particle.
+     * @brief Add one wall object represented by a level-set particle.
      *
      * @param objVertexLocalPosition Local mesh vertex positions of the wall object.
      * @param objTriangleVertexID Triangle connectivity of the wall mesh.
@@ -227,7 +225,7 @@ public:
     const double frictionCoefficient, 
     const double restitutionCoefficient = 1.)
     {
-        fixedLSParticle_.add(objVertexLocalPosition, 
+        Wall_.add(objVertexLocalPosition, 
         objTriangleVertexID, 
         gridNodeLevelSetFunctionValue, 
         gridNodeLocalOrigin, 
@@ -242,28 +240,27 @@ public:
         0., 
         0., 
         frictionCoefficient, 
-        restitutionCoefficient, 
-        stream_);
+        restitutionCoefficient);
     }
 
     void moveLSParticle(const size_t index, const double3 offSet) 
     { 
-        LSParticle_.move(index, offSet, stream_); 
+        LSParticle_.move(index, offSet); 
     }
 
     void moveWall(const size_t index, const double3 offSet) 
     { 
-        fixedLSParticle_.move(index, offSet, stream_); 
+        Wall_.move(index, offSet); 
     }
 
     void setFixedVelocityToWall(const size_t index, const double3 velocity)
     {
-        fixedLSParticle_.setVelocity(index, velocity, stream_);
+        Wall_.setVelocity(index, velocity);
     }
 
     void setFixedAngularVelocityToWall(const size_t index, const double3 angularVelocity)
     {
-        fixedLSParticle_.setAngularVelocity(index, angularVelocity, stream_);
+        Wall_.setAngularVelocity(index, angularVelocity);
     }
 
     /**
@@ -285,12 +282,10 @@ public:
     const double cohesion= 0., 
     const double frictionCoefficient= 0.)
     {
-        std::vector<double3> point = LSParticleInteraction_.contactPointHostCopy();
-        std::vector<double3> normal = LSParticleInteraction_.contactNormalHostCopy();
-        std::vector<int> masterBoundaryNodeID = LSParticleInteraction_.masterIDHostCopy();
-        std::vector<int> slaveParticleID = LSParticleInteraction_.slaveIDHostCopy();
-        std::vector<double3> position = LSParticle_.positionHostCopy();
-        std::vector<quaternion> orientation = LSParticle_.orientationHostCopy();
+        const std::vector<int> masterBoundaryNodeID = LSParticleInteraction_.masterIDHostRef();
+        const std::vector<int> slaveParticleID = LSParticleInteraction_.slaveIDHostRef();
+        const std::vector<double3> point = LSParticleInteraction_.contactPointHostRef();
+        const std::vector<double3> normal = LSParticleInteraction_.contactNormalHostRef();
 
         for(size_t k = 0; k < point.size(); k++)
         {
@@ -298,10 +293,10 @@ public:
             const int j = slaveParticleID[k];
             VBondedInteraction_.add(i, 
             j, 
-            position[i], 
-            position[j], 
-            orientation[i], 
-            orientation[j], 
+            LSParticle_.positionHostRef()[i], 
+            LSParticle_.positionHostRef()[j], 
+            LSParticle_.orientationHostRef()[i], 
+            LSParticle_.orientationHostRef()[j], 
             point[k], 
             normal[k], 
             radius, 
@@ -310,8 +305,7 @@ public:
             poissonRatio, 
             tensileStrength, 
             cohesion, 
-            frictionCoefficient, 
-            stream_);
+            frictionCoefficient);
         }
     }
 
@@ -342,20 +336,19 @@ public:
         poissonRatio, 
         tensileStrength, 
         cohesion, 
-        frictionCoefficient, 
-        stream_);
+        frictionCoefficient);
     }
 
-    void activateGPUDevice(const int device)
+    void addPeriodicBoundaryXY2D()
     {
-        cudaError_t cudaStatus = cudaSetDevice(device);
-        if (cudaStatus != cudaSuccess) 
-        {
-            std::cout << "cudaSetDevice( " << device 
-            << " ) failed! Do you have a CUDA-capable GPU installed?" 
-            << std::endl; 
-            exit(1); 
-        }
+        PeriodicBoundaryXY2D_.turnOn();
+        PeriodicBoundarySector_.turnOff();
+    }
+
+    void addPeriodicBoundarySector()
+    {
+        PeriodicBoundaryXY2D_.turnOff();
+        PeriodicBoundarySector_.turnOn();
     }
 
     /**
@@ -374,18 +367,284 @@ public:
     const double3 maxDomain, 
     const double3 gravity, 
     const double timeStep, 
-    const double maximumTime,
+    const double maximumTime, 
     const size_t numFrame, 
     const int argc,
     char** argv)
     {
+        if (!checkSolverInput(minDomain, maxDomain, timeStep, maximumTime)) return;
+        if (!activateGPUDevice()) return;
         phase_ += 1;
-        std::string outputDir = dir_ + "_phase" + std::to_string(phase_);
-        const char* argv0 = (argc > 0) ? argv[0] : nullptr;
-        outputDir = resolveOutputDirFromBuild(outputDir, argv0);
-        std::filesystem::create_directories(outputDir);
+        updateDir(argc, argv);
+        removeFiles();
+        upload(minDomain, maxDomain);
+        
+        const size_t numStep = size_t(maximumTime / timeStep) + 1;
+        size_t frameInterval = numStep;
+        if (numFrame > 0) frameInterval = numStep / numFrame;
+        if (frameInterval < 1) frameInterval = 1;
+        
+        bool addBondFlag = VBondedInteraction_.numPair_device() > 0;
+        bool addPeriodicBoundaryFlag = (PeriodicBoundaryXY2D_.isActived() || PeriodicBoundarySector_.isActived());
+        if ((!addBondFlag) && (!addPeriodicBoundaryFlag)) compute(gravity, timeStep, numStep, frameInterval);
+        else if (addBondFlag && (!addPeriodicBoundaryFlag)) compute_addBond(gravity, timeStep, numStep, frameInterval);
+        else if ((!addBondFlag) && addPeriodicBoundaryFlag) compute_addPeriodicBoundary(gravity, timeStep, numStep, frameInterval);
+        else compute_addBondAndPeriodicBoundary(gravity, timeStep, numStep, frameInterval);
+    }
 
-        std::cout << "[Solver] Uploading..." << std::endl;
+protected:
+    virtual void addExternalForceTorque(const double time) {}
+
+    LSParticle& getLSParticle() { return LSParticle_; }
+
+    LSParticle& getWall() { return Wall_; }
+
+    SolidInteraction& getLSParticleInteraction() { return LSParticleInteraction_; }
+
+    SolidInteraction& getLSParticleWallInteraction() { return WallLSParticleInteraction_; }
+
+    VBondedInteraction& getLSParticleBondedInteraction() { return VBondedInteraction_; }
+
+    void compute(const double3 gravity, const double timeStep, const size_t numStep, const size_t frameInterval, 
+    size_t iStep = 0, size_t iFrame = 0, double time = 0.)
+    {
+        updateLSParticleSpatialGrid();
+        buildLSParticleInteraction();
+        output(iFrame, iStep, time);
+        const double halfTimeStep = 0.5 * timeStep;
+        while (iStep <= numStep)
+        {
+            time += halfTimeStep;
+            clearLSParticleForceTorque();
+            addLSParticleContactForceTorque(halfTimeStep);
+            addExternalForceTorque(time);
+            integration1stHalf(gravity, halfTimeStep);
+
+            updateLSParticleSpatialGrid();
+            buildLSParticleInteraction();
+
+            time += halfTimeStep;
+            clearLSParticleForceTorque();
+            addLSParticleContactForceTorque(halfTimeStep);
+            addExternalForceTorque(time);
+            integration2ndHalf(gravity, halfTimeStep);
+
+            iStep += 1;
+            if (iStep % frameInterval == 0)
+            {
+                iFrame++;
+                output(iFrame, iStep, time);
+            }
+        }
+        iFrame++;
+        output(iFrame, iStep, time);
+        std::cout << "[Solver] Computation Completed" << std::endl;
+    }
+
+    void compute_addBond(const double3 gravity, const double timeStep, const size_t numStep, const size_t frameInterval, 
+    size_t iStep = 0, size_t iFrame = 0, double time = 0.)
+    {
+        updateLSParticleSpatialGrid();
+        buildLSParticleInteraction();
+        output(iFrame, iStep, time);
+        const double halfTimeStep = 0.5 * timeStep;
+        while (iStep <= numStep)
+        {
+            time += halfTimeStep;
+            clearLSParticleForceTorque();
+            addLSParticleContactForceTorque(halfTimeStep);
+            addBondedForceTorque();
+            addExternalForceTorque(time);
+            integration1stHalf(gravity, halfTimeStep);
+
+            updateLSParticleSpatialGrid();
+            buildLSParticleInteraction();
+
+            time += halfTimeStep;
+            clearLSParticleForceTorque();
+            addLSParticleContactForceTorque(halfTimeStep);
+            addBondedForceTorque();
+            addExternalForceTorque(time);
+            integration2ndHalf(gravity, halfTimeStep);
+
+            iStep += 1;
+            if (iStep % frameInterval == 0)
+            {
+                iFrame++;
+                output(iFrame, iStep, time);
+            }
+        }
+        iFrame++;
+        output(iFrame, iStep, time);
+        std::cout << "[Solver] Computation Completed" << std::endl;
+    }
+
+    void compute_addPeriodicBoundary(const double3 gravity, const double timeStep, const size_t numStep, const size_t frameInterval, 
+    size_t iStep = 0, size_t iFrame = 0, double time = 0.)
+    {
+        updateLSParticleSpatialGrid();
+        buildLSParticleInteraction();
+        updateGhostSpatialGrid();
+        buildGhostInteraction();
+        output(iFrame, iStep, time);
+        const double halfTimeStep = 0.5 * timeStep;
+        while (iStep <= numStep)
+        {
+            time += halfTimeStep;
+            clearLSParticleForceTorque();
+            addLSParticleContactForceTorque(halfTimeStep);
+            addGhostForceTorque(halfTimeStep);
+            addExternalForceTorque(time);
+            integration1stHalf(gravity, halfTimeStep);
+
+            updateLSParticleSpatialGrid();
+            buildLSParticleInteraction();
+            updateGhostSpatialGrid();
+            buildGhostInteraction();
+
+            time += halfTimeStep;
+            clearLSParticleForceTorque();
+            addLSParticleContactForceTorque(halfTimeStep);
+            addGhostForceTorque(halfTimeStep);
+            addExternalForceTorque(time);
+            integration2ndHalf(gravity, halfTimeStep);
+
+            iStep += 1;
+            if (iStep % frameInterval == 0)
+            {
+                iFrame++;
+                output(iFrame, iStep, time);
+            }
+        }
+        iFrame++;
+        output(iFrame, iStep, time);
+        std::cout << "[Solver] Computation Completed" << std::endl;
+    }
+
+    void compute_addBondAndPeriodicBoundary(const double3 gravity, const double timeStep, const size_t numStep, const size_t frameInterval, 
+    size_t iStep = 0, size_t iFrame = 0, double time = 0.)
+    {
+        updateLSParticleSpatialGrid();
+        buildLSParticleInteraction();
+        updateGhostSpatialGrid();
+        buildGhostInteraction();
+        output(iFrame, iStep, time);
+        const double halfTimeStep = 0.5 * timeStep;
+        while (iStep <= numStep)
+        {
+            time += halfTimeStep;
+            clearLSParticleForceTorque();
+            addLSParticleContactForceTorque(halfTimeStep);
+            addBondedForceTorque();
+            addGhostForceTorque(halfTimeStep);
+            addExternalForceTorque(time);
+            integration1stHalf(gravity, halfTimeStep);
+
+            updateLSParticleSpatialGrid();
+            buildLSParticleInteraction();
+            updateGhostSpatialGrid();
+            buildGhostInteraction();
+
+            time += halfTimeStep;
+            clearLSParticleForceTorque();
+            addLSParticleContactForceTorque(halfTimeStep);
+            addBondedForceTorque();
+            addGhostForceTorque(halfTimeStep);
+            addExternalForceTorque(time);
+            integration2ndHalf(gravity, halfTimeStep);
+
+            iStep += 1;
+            if (iStep % frameInterval == 0)
+            {
+                iFrame++;
+                output(iFrame, iStep, time);
+            }
+        }
+        iFrame++;
+        output(iFrame, iStep, time);
+        std::cout << "[Solver] Computation Completed" << std::endl;
+    }
+
+    void download()
+    {
+        std::cout << "[Solver] Downloading..." << std::endl;
+        LSParticle_.finalize(stream_);
+        LSParticleInteraction_.finalize(stream_);
+        Wall_.finalize(stream_);
+        WallLSParticleInteraction_.finalize(stream_);
+        VBondedInteraction_.finalize(stream_);
+        std::cout << "[Solver] Download Completed" << std::endl;
+    }
+
+    void output(const size_t iFrame, const size_t iStep, const double time)
+    {
+        std::cout << "[Solver] ------ Frame " << iFrame << " at Time " << time << " ------ " << std::endl;
+
+        download();
+        
+        std::cout << "[Solver] Outputting... " << std::endl;
+        const std::string dir = dir_ + "_phase" + std::to_string(phase_);
+        const std::string dir1 = dir + "/LSParticle";
+        const std::string dir2 = dir + "/LSParticleInteraction";
+        const std::string dir3 = dir + "/Wall";
+        const std::string dir4 = dir + "/LSParticle-WallInteraction";
+        MKDIR(dir.c_str());
+        LSParticle_.outputVTU(dir1, iFrame, iStep, time);
+        LSParticleInteraction_.outputVTU(dir2, iFrame, iStep, time);
+        VBondedInteraction_.outputVTU(dir2, iFrame, iStep, time);
+        Wall_.outputVTU(dir3, iFrame, iStep, time);
+        WallLSParticleInteraction_.outputVTU(dir4, iFrame, iStep, time);
+        std::cout << "[Solver] Output Completed" << std::endl;
+    }
+
+private:
+    bool activateGPUDevice()
+    {
+        cudaError_t cudaStatus = cudaSetDevice(device_);
+        if (cudaStatus != cudaSuccess) 
+        {
+            std::cout << "cudaSetDevice( " << device_ 
+            << " ) failed! Do you have a CUDA-capable GPU installed?" 
+            << std::endl; 
+            exit(1);
+            return false;
+        }
+        return true;
+    }
+
+    inline std::filesystem::path getBuildDirectoryFromExecutable(const char* argv0)
+    {
+        if (argv0 == nullptr) return std::filesystem::current_path();
+        std::filesystem::path exePath(argv0);
+        if (exePath.is_relative())
+        {
+            exePath = std::filesystem::absolute(exePath);
+        }
+        exePath = std::filesystem::weakly_canonical(exePath);
+        std::filesystem::path outputDir = exePath.parent_path();
+        while (!outputDir.empty() && outputDir.filename() != "build")
+        {
+            const std::filesystem::path parent = outputDir.parent_path();
+            if (parent == outputDir) break;
+            outputDir = parent;
+        }
+        if (!outputDir.empty() && outputDir.filename() == "build")
+        {
+            return outputDir;
+        }
+        return exePath.parent_path();
+    }
+
+    void updateDir(const int argc, char** argv)
+    {
+        const char* argv0 = (argc > 0) ? argv[0] : nullptr;
+        const std::filesystem::path p(dir_);
+        const std::filesystem::path resolvedPath = p.is_absolute() ? p : getBuildDirectoryFromExecutable(argv0) / p;
+        dir_ = resolvedPath.string();
+    }
+
+    bool checkSolverInput(const double3 minDomain, const double3 maxDomain, const double timeStep, const double maximumTime)
+    {
         const double3 domainSize = maxDomain - minDomain;
         if (domainSize.x <= 0.0 || domainSize.y <= 0.0 || domainSize.z <= 0.0)
         {
@@ -394,7 +653,7 @@ public:
                     << domainSize.y << ", "
                     << domainSize.z << ")."
                     << std::endl;
-            return;
+            return false;
         }
 
         if (timeStep <= 0.0)
@@ -402,7 +661,7 @@ public:
             std::cerr << "[Solver] Invalid timeStep: "
                     << timeStep << "."
                     << std::endl;
-            return;
+            return false;
         }
 
         if (maximumTime < 0.0)
@@ -410,72 +669,20 @@ public:
             std::cerr << "[Solver] Invalid maximumTime: "
                     << maximumTime << "."
                     << std::endl;
-            return;
+            return false;
         }
 
-        removeFiles(outputDir);
-        upload(minDomain, maxDomain);
-        updateSpatialGrid();
-        buildLSParticleInteraction();
-        std::cout << "[Solver] Upload Completed" << std::endl;
-
-        const size_t numStep = size_t(maximumTime / timeStep) + 1;
-        size_t frameInterval = numStep;
-        if (numFrame > 0) frameInterval = numStep / numFrame;
-        if (frameInterval < 1) frameInterval = 1;
-        size_t iStep = 0, iFrame = 0;
-        double time = 0.;
-        const double halfTimeStep = 0.5 * timeStep;
-        output(outputDir, iFrame, iStep, time);
-        while (iStep <= numStep)
-        {
-            simulateOneStep(time, gravity, halfTimeStep);
-            iStep += 1;
-            if (iStep % frameInterval == 0)
-            {
-                iFrame++;
-                output(outputDir, iFrame, iStep, time);
-            }
-        }
-        iFrame++;
-        output(outputDir, iFrame, iStep, time);
-        std::cout << "[Solver] Simulation Completed" << std::endl;
+        return true;
     }
 
-    void copyFromHost(const LSSolver& other)
+    void removeFiles()
     {
-        LSParticle_.copyFromHost(other.LSParticle_);
-        fixedLSParticle_.copyFromHost(other.fixedLSParticle_);
-        LSParticleInteraction_.copyFromHost(other.LSParticleInteraction_);
-        fixedLSParticleInteraction_.copyFromHost(other.fixedLSParticleInteraction_);
-        VBondedInteraction_.copyFromHost(other.VBondedInteraction_);
-
-        dir_ = other.dir_;
-        phase_ = other.phase_;
-        stream_ = other.stream_;
-        maxGPUThread_ = other.maxGPUThread_;
-    }
-
-protected:
-    virtual void addExternalForceTorque(const double time) {}
-
-    LSParticle& getLSParticle() { return LSParticle_; }
-
-    LSParticle& getWall() { return fixedLSParticle_; }
-
-    SolidInteraction& getLSParticleInteraction() { return LSParticleInteraction_; }
-
-    SolidInteraction& getLSParticleWallInteraction() { return fixedLSParticleInteraction_; }
-
-    VBondedInteraction& getLSParticleBondedInteraction() { return VBondedInteraction_; }
-
-    void removeFiles(const std::string outputDir)
-    {
-        const std::string dir1 = outputDir + "/LSParticle";
-        const std::string dir2 = outputDir + "/LSParticleInteraction";
-        const std::string dir3 = outputDir + "/Wall";
-        const std::string dir4 = outputDir + "/LSParticle-WallInteraction";
-        MKDIR(outputDir.c_str());
+        const std::string dir = dir_ + "_phase" + std::to_string(phase_);
+        const std::string dir1 = dir + "/LSParticle";
+        const std::string dir2 = dir + "/LSParticleInteraction";
+        const std::string dir3 = dir + "/Wall";
+        const std::string dir4 = dir + "/LSParticle-WallInteraction";
+        MKDIR(dir.c_str());
         removeVtuFiles(dir1);
         removeVtuFiles(dir2);
         removeVtuFiles(dir3);
@@ -484,105 +691,22 @@ protected:
 
     void upload(const double3 minDomain, const double3 maxDomain)
     {
+        std::cout << "[Solver] Uploading..." << std::endl;
         LSParticle_.initialize(minDomain, maxDomain, maxGPUThread_, stream_);
         LSParticleInteraction_.initialize(LSParticle_.LSBoundaryNode_.num(), maxGPUThread_, stream_);
-        fixedLSParticle_.initialize(minDomain, maxDomain, maxGPUThread_, stream_);
-        fixedLSParticleInteraction_.initialize(LSParticle_.LSBoundaryNode_.num(), maxGPUThread_, stream_);
+        Wall_.initialize(minDomain, maxDomain, maxGPUThread_, stream_);
+        WallLSParticleInteraction_.initialize(LSParticle_.LSBoundaryNode_.num(), maxGPUThread_, stream_);
         VBondedInteraction_.initialize(maxGPUThread_, stream_);
+        PeriodicBoundaryXY2D_.initialize(LSParticle_, maxGPUThread_, stream_);
+        PeriodicBoundarySector_.initialize(LSParticle_, maxGPUThread_, stream_);
+        std::cout << "[Solver] Upload Completed" << std::endl;
     }
 
-    void simulateOneStep(double& time, const double3 gravity, const double halfTimeStep)
+    void updateLSParticleSpatialGrid()
     {
-        updateSpatialGrid();
-        buildLSParticleInteraction();
-        calLSParticleContactForceTorque(halfTimeStep);
-        time += halfTimeStep;
-        addExternalForceTorque(time);
-        integration1stHalf(gravity, halfTimeStep);
-        buildLSParticleInteraction();
-        calLSParticleContactForceTorque(halfTimeStep);
-        time += halfTimeStep;
-        addExternalForceTorque(time);
-        integration2ndHalf(gravity, halfTimeStep);
-    }
-
-    void download()
-    {
-        LSParticle_.finalize(stream_);
-        LSParticleInteraction_.finalize(stream_);
-        fixedLSParticle_.finalize(stream_);
-        fixedLSParticleInteraction_.finalize(stream_);
-        VBondedInteraction_.finalize(stream_);
-    }
-
-    void output(const std::string &outputDir, const size_t iFrame, const size_t iStep, const double time)
-    {
-        std::cout << "[Solver] ------ Frame " << iFrame << " at Time " << time << " ------ " << std::endl;
-
-        std::cout << "[Solver] Downloading..." << std::endl;
-        download();
-        std::cout << "[Solver] Download Completed" << std::endl;
-
-        std::cout << "[Solver] Outputting... " << std::endl;
-        const std::string dir1 = outputDir + "/LSParticle";
-        const std::string dir2 = outputDir + "/LSParticleInteraction";
-        const std::string dir3 = outputDir + "/Wall";
-        const std::string dir4 = outputDir + "/LSParticle-WallInteraction";
-        MKDIR(outputDir.c_str());
-
-        LSParticle_.outputVTU(dir1, iFrame, iStep, time);
-        LSParticleInteraction_.outputVTU(dir2, iFrame, iStep, time);
-        VBondedInteraction_.outputVTU(dir2, iFrame, iStep, time);
-        fixedLSParticle_.outputVTU(dir3, iFrame, iStep, time);
-        fixedLSParticleInteraction_.outputVTU(dir4, iFrame, iStep, time);
-        std::cout << "[Solver] Output Completed" << std::endl;
-    }
-
-private:
-    inline std::filesystem::path getBuildDirectoryFromExecutable(const char* argv0)
-    {
-        if (argv0 == nullptr) return std::filesystem::current_path();
-
-        std::filesystem::path exePath(argv0);
-
-        if (exePath.is_relative())
-        {
-            exePath = std::filesystem::absolute(exePath);
-        }
-
-        exePath = std::filesystem::weakly_canonical(exePath);
-
-        std::filesystem::path outputDir = exePath.parent_path();
-
-        while (!outputDir.empty() && outputDir.filename() != "build")
-        {
-            const std::filesystem::path parent = outputDir.parent_path();
-            if (parent == outputDir) break;
-            outputDir = parent;
-        }
-
-        if (!outputDir.empty() && outputDir.filename() == "build")
-        {
-            return outputDir;
-        }
-
-        return exePath.parent_path();
-    }
-
-    inline std::string resolveOutputDirFromBuild(const std::string& outputDirName, const char* argv0)
-    {
-        const std::filesystem::path p(outputDirName);
-
-        const std::filesystem::path resolvedPath = p.is_absolute() ? p : getBuildDirectoryFromExecutable(argv0) / p;
-
-        return resolvedPath.string();
-    }
-
-    void updateSpatialGrid()
-    {
-        launchUpdateSpatialGridHashStartEnd(LSParticle_.position(), 
-        LSParticle_.hashIndex(), 
+        launchUpdateSpatialGridHashStartEnd(LSParticle_.hashIndex(), 
         LSParticle_.hashValue(), 
+        LSParticle_.position(), 
         LSParticle_.spatialGrid_.hashStart(), 
         LSParticle_.spatialGrid_.hashEnd(), 
         LSParticle_.spatialGrid_.minimumBoundary(), 
@@ -595,20 +719,26 @@ private:
         LSParticle_.blockDim(), 
         stream_);
 
-        launchUpdateSpatialGridHashStartEnd(fixedLSParticle_.position(), 
-        fixedLSParticle_.hashIndex(), 
-        fixedLSParticle_.hashValue(), 
-        fixedLSParticle_.spatialGrid_.hashStart(), 
-        fixedLSParticle_.spatialGrid_.hashEnd(), 
-        fixedLSParticle_.spatialGrid_.minimumBoundary(), 
-        fixedLSParticle_.spatialGrid_.maximumBoundary(), 
-        fixedLSParticle_.spatialGrid_.inverseCellSize(), 
-        fixedLSParticle_.spatialGrid_.size3D(), 
-        fixedLSParticle_.spatialGrid_.num_device(), 
-        fixedLSParticle_.num_device(), 
-        fixedLSParticle_.gridDim(), 
-        fixedLSParticle_.blockDim(), 
+        launchUpdateSpatialGridHashStartEnd(Wall_.hashIndex(), 
+        Wall_.hashValue(), 
+        Wall_.position(), 
+        Wall_.spatialGrid_.hashStart(), 
+        Wall_.spatialGrid_.hashEnd(), 
+        Wall_.spatialGrid_.minimumBoundary(), 
+        Wall_.spatialGrid_.maximumBoundary(), 
+        Wall_.spatialGrid_.inverseCellSize(), 
+        Wall_.spatialGrid_.size3D(), 
+        Wall_.spatialGrid_.num_device(), 
+        Wall_.num_device(), 
+        Wall_.gridDim(), 
+        Wall_.blockDim(), 
         stream_);
+    }
+
+    void updateGhostSpatialGrid()
+    {
+        PeriodicBoundaryXY2D_.updateGhostSpatialGrid(LSParticle_, stream_);
+        PeriodicBoundarySector_.updateGhostSpatialGrid(LSParticle_, stream_);
     }
 
     void buildLSParticleInteraction()
@@ -636,7 +766,7 @@ private:
         stream_);
 
         LSParticleInteraction_.updateNeighborPrefixSum(stream_);
-        LSParticleInteraction_.updateNumPairFromNeighborPrefixSum(maxGPUThread_, stream_);
+        LSParticleInteraction_.updateNumPair(maxGPUThread_, stream_);
         LSParticleInteraction_.savePreviousStep(stream_);
 
         launchBuildLevelSetBoundaryNodeInteractions2nd(LSParticleInteraction_.slidingSpring(), 
@@ -670,71 +800,80 @@ private:
         LSParticleInteraction_.masterBlockDim(), 
         stream_);
 
-        launchBuildLevelSetBoundaryNodeFixedParticleInteractions1st(fixedLSParticleInteraction_.masterNeighborCount(), 
+        launchBuildLevelSetBoundaryNodeFixedParticleInteractions1st(WallLSParticleInteraction_.masterNeighborCount(), 
         LSParticle_.LSBoundaryNode_.localPosition(), 
         LSParticle_.LSBoundaryNode_.particleID(), 
-        fixedLSParticle_.LSGridNode_.levelSetFunctionValue(), 
+        Wall_.LSGridNode_.levelSetFunctionValue(), 
         LSParticle_.position(), 
         LSParticle_.orientation(), 
-        fixedLSParticle_.position(), 
-        fixedLSParticle_.orientation(), 
-        fixedLSParticle_.inverseGridNodeSpacing(), 
-        fixedLSParticle_.gridNodeLocalOrigin(), 
-        fixedLSParticle_.gridNodeSize(), 
-        fixedLSParticle_.gridNodePrefixSum(), 
-        fixedLSParticle_.hashIndex(),
-        fixedLSParticle_.spatialGrid_.hashStart(), 
-        fixedLSParticle_.spatialGrid_.hashEnd(), 
-        fixedLSParticle_.spatialGrid_.minimumBoundary(), 
-        fixedLSParticle_.spatialGrid_.inverseCellSize(), 
-        fixedLSParticle_.spatialGrid_.size3D(), 
-        fixedLSParticleInteraction_.numMaster_device(), 
-        fixedLSParticleInteraction_.masterGridDim(), 
-        fixedLSParticleInteraction_.masterBlockDim(), 
+        Wall_.position(), 
+        Wall_.orientation(), 
+        Wall_.inverseGridNodeSpacing(), 
+        Wall_.gridNodeLocalOrigin(), 
+        Wall_.gridNodeSize(), 
+        Wall_.gridNodePrefixSum(), 
+        Wall_.hashIndex(),
+        Wall_.spatialGrid_.hashStart(), 
+        Wall_.spatialGrid_.hashEnd(), 
+        Wall_.spatialGrid_.minimumBoundary(), 
+        Wall_.spatialGrid_.inverseCellSize(), 
+        Wall_.spatialGrid_.size3D(), 
+        WallLSParticleInteraction_.numMaster_device(), 
+        WallLSParticleInteraction_.masterGridDim(), 
+        WallLSParticleInteraction_.masterBlockDim(), 
         stream_);
 
-        fixedLSParticleInteraction_.updateNeighborPrefixSum(stream_);
-        fixedLSParticleInteraction_.updateNumPairFromNeighborPrefixSum(maxGPUThread_, stream_);
-        fixedLSParticleInteraction_.savePreviousStep(stream_);
+        WallLSParticleInteraction_.updateNeighborPrefixSum(stream_);
+        WallLSParticleInteraction_.updateNumPair(maxGPUThread_, stream_);
+        WallLSParticleInteraction_.savePreviousStep(stream_);
 
-        launchBuildLevelSetBoundaryNodeFixedParticleInteractions2nd(fixedLSParticleInteraction_.slidingSpring(), 
-        fixedLSParticleInteraction_.contactPoint(), 
-        fixedLSParticleInteraction_.contactNormal(), 
-        fixedLSParticleInteraction_.contactOverlap(), 
-        fixedLSParticleInteraction_.masterID(), 
-        fixedLSParticleInteraction_.slaveID(), 
-        fixedLSParticleInteraction_.previousSlidingSpring(), 
-        fixedLSParticleInteraction_.previousSlaveID(), 
+        launchBuildLevelSetBoundaryNodeFixedParticleInteractions2nd(WallLSParticleInteraction_.slidingSpring(), 
+        WallLSParticleInteraction_.contactPoint(), 
+        WallLSParticleInteraction_.contactNormal(), 
+        WallLSParticleInteraction_.contactOverlap(), 
+        WallLSParticleInteraction_.masterID(), 
+        WallLSParticleInteraction_.slaveID(), 
+        WallLSParticleInteraction_.previousSlidingSpring(), 
+        WallLSParticleInteraction_.previousSlaveID(), 
         LSParticle_.LSBoundaryNode_.localPosition(), 
         LSParticle_.LSBoundaryNode_.particleID(), 
-        fixedLSParticleInteraction_.masterNeighborPrefixSum(), 
-        fixedLSParticleInteraction_.previousMasterNeighborPrefixSum(), 
-        fixedLSParticle_.LSGridNode_.levelSetFunctionValue(), 
+        WallLSParticleInteraction_.masterNeighborPrefixSum(), 
+        WallLSParticleInteraction_.previousMasterNeighborPrefixSum(), 
+        Wall_.LSGridNode_.levelSetFunctionValue(), 
         LSParticle_.position(), 
         LSParticle_.orientation(), 
-        fixedLSParticle_.position(), 
-        fixedLSParticle_.orientation(), 
-        fixedLSParticle_.inverseGridNodeSpacing(), 
-        fixedLSParticle_.gridNodeLocalOrigin(), 
-        fixedLSParticle_.gridNodeSize(), 
-        fixedLSParticle_.gridNodePrefixSum(), 
-        fixedLSParticle_.hashIndex(),
-        fixedLSParticle_.spatialGrid_.hashStart(), 
-        fixedLSParticle_.spatialGrid_.hashEnd(), 
-        fixedLSParticle_.spatialGrid_.minimumBoundary(), 
-        fixedLSParticle_.spatialGrid_.inverseCellSize(), 
-        fixedLSParticle_.spatialGrid_.size3D(), 
-        fixedLSParticleInteraction_.numMaster_device(), 
-        fixedLSParticleInteraction_.masterGridDim(), 
-        fixedLSParticleInteraction_.masterBlockDim(), 
+        Wall_.position(), 
+        Wall_.orientation(), 
+        Wall_.inverseGridNodeSpacing(), 
+        Wall_.gridNodeLocalOrigin(), 
+        Wall_.gridNodeSize(), 
+        Wall_.gridNodePrefixSum(), 
+        Wall_.hashIndex(),
+        Wall_.spatialGrid_.hashStart(), 
+        Wall_.spatialGrid_.hashEnd(), 
+        Wall_.spatialGrid_.minimumBoundary(), 
+        Wall_.spatialGrid_.inverseCellSize(), 
+        Wall_.spatialGrid_.size3D(), 
+        WallLSParticleInteraction_.numMaster_device(), 
+        WallLSParticleInteraction_.masterGridDim(), 
+        WallLSParticleInteraction_.masterBlockDim(), 
         stream_);
     }
 
-    void calLSParticleContactForceTorque(const double halfTimeStep)
+    void buildGhostInteraction()
+    {
+        PeriodicBoundaryXY2D_.buildGhostInteraction(LSParticle_, maxGPUThread_, stream_);
+        PeriodicBoundarySector_.buildGhostInteraction(LSParticle_, maxGPUThread_, stream_);
+    }
+
+    void clearLSParticleForceTorque()
     {
         cudaMemsetAsync(LSParticle_.force(), 0, LSParticle_.num_device() * sizeof(double3), stream_);
         cudaMemsetAsync(LSParticle_.torque(), 0, LSParticle_.num_device() * sizeof(double3), stream_);
+    }
 
+    void addLSParticleContactForceTorque(const double halfTimeStep)
+    {
         launchAddLevelSetParticleContactForceTorque(LSParticleInteraction_.slidingSpring(), 
         LSParticleInteraction_.normalElasticEnergy(),
         LSParticleInteraction_.slidingElasticEnergy(),
@@ -761,14 +900,14 @@ private:
         LSParticleInteraction_.pairBlockDim(), 
         stream_);
 
-        launchAddFixedLevelSetParticleContactForceTorque(fixedLSParticleInteraction_.slidingSpring(), 
-        fixedLSParticleInteraction_.normalElasticEnergy(),
-        fixedLSParticleInteraction_.slidingElasticEnergy(),
-        fixedLSParticleInteraction_.contactPoint(),
-        fixedLSParticleInteraction_.contactNormal(), 
-        fixedLSParticleInteraction_.contactOverlap(),
-        fixedLSParticleInteraction_.masterID(),
-        fixedLSParticleInteraction_.slaveID(), 
+        launchAddFixedLevelSetParticleContactForceTorque(WallLSParticleInteraction_.slidingSpring(), 
+        WallLSParticleInteraction_.normalElasticEnergy(),
+        WallLSParticleInteraction_.slidingElasticEnergy(),
+        WallLSParticleInteraction_.contactPoint(),
+        WallLSParticleInteraction_.contactNormal(), 
+        WallLSParticleInteraction_.contactOverlap(),
+        WallLSParticleInteraction_.masterID(),
+        WallLSParticleInteraction_.slaveID(), 
         LSParticle_.LSBoundaryNode_.localPosition(),
         LSParticle_.LSBoundaryNode_.particleID(), 
         LSParticle_.force(), 
@@ -781,17 +920,20 @@ private:
         LSParticle_.shearStiffness(),
         LSParticle_.frictionCoefficient(),
         LSParticle_.restitutionCoefficient(),
-        fixedLSParticle_.position(),
-        fixedLSParticle_.velocity(),
-        fixedLSParticle_.angularVelocity(),
-        fixedLSParticle_.frictionCoefficient(),
-        fixedLSParticle_.restitutionCoefficient(),
+        Wall_.position(),
+        Wall_.velocity(),
+        Wall_.angularVelocity(),
+        Wall_.frictionCoefficient(),
+        Wall_.restitutionCoefficient(),
         halfTimeStep, 
-        fixedLSParticleInteraction_.numPair_device(), 
-        fixedLSParticleInteraction_.pairGridDim(), 
-        fixedLSParticleInteraction_.pairBlockDim(), 
+        WallLSParticleInteraction_.numPair_device(), 
+        WallLSParticleInteraction_.pairGridDim(), 
+        WallLSParticleInteraction_.pairBlockDim(), 
         stream_);
+    }
 
+    void addBondedForceTorque()
+    {
         launchAddBondedForceTorque(VBondedInteraction_.centerPoint(), 
         VBondedInteraction_.maxNormalStress(), 
         VBondedInteraction_.maxShearStress(), 
@@ -829,6 +971,12 @@ private:
         stream_);
     }
 
+    void addGhostForceTorque(const double halfTimeStep)
+    {
+        PeriodicBoundaryXY2D_.addGhostForceTorque(LSParticle_, halfTimeStep, stream_); 
+        PeriodicBoundarySector_.addGhostForceTorque(LSParticle_, halfTimeStep, stream_); 
+    }
+
     void integration1stHalf(const double3 gravity, const double halfTimeStep)
     {
         launchParticleVelocityAngularVelocityIntegration(LSParticle_.velocity(),
@@ -855,14 +1003,14 @@ private:
         LSParticle_.blockDim(),
         stream_);
 
-        launchParticlePositionOrientationIntegration(fixedLSParticle_.position(), 
-        fixedLSParticle_.orientation(), 
-        fixedLSParticle_.velocity(),
-        fixedLSParticle_.angularVelocity(), 
+        launchParticlePositionOrientationIntegration(Wall_.position(), 
+        Wall_.orientation(), 
+        Wall_.velocity(),
+        Wall_.angularVelocity(), 
         2. * halfTimeStep, 
-        fixedLSParticle_.num_device(), 
-        fixedLSParticle_.gridDim(), 
-        fixedLSParticle_.blockDim(),
+        Wall_.num_device(), 
+        Wall_.gridDim(), 
+        Wall_.blockDim(),
         stream_);
     }
 
@@ -884,13 +1032,16 @@ private:
     }
 
     LSParticle LSParticle_;
-    LSParticle fixedLSParticle_;
+    LSParticle Wall_;
     SolidInteraction LSParticleInteraction_;
-    SolidInteraction fixedLSParticleInteraction_;
+    SolidInteraction WallLSParticleInteraction_;
     VBondedInteraction VBondedInteraction_;
+    PeriodicBoundaryXY2D PeriodicBoundaryXY2D_;
+    PeriodicBoundarySector PeriodicBoundarySector_;
 
     std::string dir_;
-    size_t phase_{0};
+    size_t phase_;
     cudaStream_t stream_;
     size_t maxGPUThread_;
+    size_t device_;
 };

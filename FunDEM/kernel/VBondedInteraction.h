@@ -5,6 +5,8 @@
 #include "CUDAKernelFunction/myUtility/myVec.h"
 #include <cstdint>
 #include <fstream>
+#include <iomanip>
+#include <iostream>
 
 inline double3 getInitialOrthogonalUnitVectorsN2(const double3 n1)
 {
@@ -80,9 +82,7 @@ public:
     const double poissonRatio, 
     const double tensileStrength, 
     const double cohesion, 
-    const double frictionCoefficient,
-    
-    cudaStream_t stream)
+    const double frictionCoefficient)
     {
         if (isZero(lengthSquared(globalNormal)))
         {
@@ -123,12 +123,6 @@ public:
             std::cerr << "[VBondedInteraction] Invalid Poisson ratio: "
                     << poissonRatio << "." << std::endl;
             return;
-        }
-
-        if (upload_) 
-        {
-            copyDeviceToHost(stream);
-            upload_ = false;
         }
 
         const double Rb = radius;
@@ -197,14 +191,14 @@ public:
 
     void initialize(const size_t maxGPUThread, cudaStream_t stream)
     {
-        if (numPair() == 0 || upload_) return;
+        const size_t numBondedPair = centerPoint_.hostSize();
+        if (numBondedPair == 0) return;
 
         copyHostToDevice(stream);
 
         if (maxGPUThread > 0) blockDim_ = maxGPUThread;
-        if (numPair_device() < maxGPUThread) blockDim_ = numPair_device();
-        gridDim_ = (numPair_device() + blockDim_ - 1) / blockDim_;
-        upload_ = true;
+        if (numBondedPair < maxGPUThread) blockDim_ = numBondedPair;
+        gridDim_ = (numBondedPair + blockDim_ - 1) / blockDim_;
     }
 
     /**
@@ -378,39 +372,8 @@ public:
 
     void finalize(cudaStream_t stream)
     {
+        if (numPair_device() == 0) return;
         copyDeviceToHost(stream);
-    }
-
-    void copyFromHost(const VBondedInteraction& other)
-    {
-        masterObjectID_.setHost(other.masterObjectID_.hostRef());
-        slaveObjectID_.setHost(other.slaveObjectID_.hostRef());
-
-        activated_.setHost(other.activated_.hostRef());
-        centerPoint_.setHost(other.centerPoint_.hostRef());
-
-        radius_.setHost(other.radius_.hostRef());
-        initialLength_.setHost(other.initialLength_.hostRef());
-        B1_.setHost(other.B1_.hostRef());
-        B2_.setHost(other.B2_.hostRef());
-        B3_.setHost(other.B3_.hostRef());
-        B4_.setHost(other.B4_.hostRef());
-
-        Un_.setHost(other.Un_.hostRef());
-        Us_.setHost(other.Us_.hostRef());
-        Ub_.setHost(other.Ub_.hostRef());
-        Ut_.setHost(other.Ut_.hostRef());        
-        maxNormalStress_.setHost(other.maxNormalStress_.hostRef());
-        maxShearStress_.setHost(other.maxShearStress_.hostRef());
-
-        tensileStrength_.setHost(other.tensileStrength_.hostRef());
-        cohesion_.setHost(other.cohesion_.hostRef());
-        frictionCoefficient_.setHost(other.frictionCoefficient_.hostRef());
-
-        masterVBondPoint_.setHost(other.masterVBondPoint_);
-        slaveVBondPoint_.setHost(other.slaveVBondPoint_);
-
-        upload_ = false;
     }
 
     int* masterObjectID() { return masterObjectID_.d_ptr; }
@@ -525,6 +488,4 @@ private:
 
     size_t gridDim_{1};
     size_t blockDim_{1};
-
-    bool upload_{false};
 };

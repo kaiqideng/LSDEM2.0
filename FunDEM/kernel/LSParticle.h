@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <cstdint>
 #include <fstream>
+#include <iomanip>
+#include <iostream>
 
 struct LSGridNode
 {
@@ -100,8 +102,6 @@ public:
     * @param[in] shearStiffness                 Shear stiffness for this particle.
     * @param[in] frictionCoefficient            Friction coefficient for this particle.
     * @param[in] restitutionCoefficient         Restitution coefficient for this particle.
-    *
-    * @param[in] stream                         CUDA stream (used only if we must download device -> host).
     */
     void add(const std::vector<double3>& boundaryNodeLocalPosition,
     const std::vector<int3>& boundaryNodeConnectivity,
@@ -120,9 +120,7 @@ public:
     const double normalStiffness,
     const double shearStiffness,
     const double frictionCoefficient,
-    const double restitutionCoefficient, 
-
-    cudaStream_t stream)
+    const double restitutionCoefficient)
     {
         if (gridNodeSize.x < 2 || gridNodeSize.y < 2 || gridNodeSize.z < 2)
         {
@@ -153,12 +151,6 @@ public:
                     << "."
                     << std::endl;
             return;
-        }
-
-        if (upload_)
-        {
-            copyDeviceToHost(stream);
-            upload_ = false;
         }
 
         if (boundaryNodeConnectivity.size() > 0)
@@ -207,45 +199,27 @@ public:
         gridNodePrefixSum_.pushHost(gridNodePrefixSum);
     }
     
-    void move(const size_t index, const double3 offset, cudaStream_t stream)
+    void move(const size_t index, const double3 offset)
     {
         if (index >= num()) return;
-
-        if (upload_)
-        {
-            copyDeviceToHost(stream);
-            upload_ = false;
-        }
 
         std::vector<double3> pos = position_.hostRef();
         pos[index] += offset;
         position_.setHost(pos);
     }
 
-    void setVelocity(const size_t index, const double3 velocity, cudaStream_t stream)
+    void setVelocity(const size_t index, const double3 velocity)
     {
         if (index >= num()) return;
-
-        if (upload_)
-        {
-            copyDeviceToHost(stream);
-            upload_ = false;
-        }
 
         std::vector<double3> vel = velocity_.hostRef();
         vel[index] = velocity;
         velocity_.setHost(vel);
     }
 
-    void setAngularVelocity(const size_t index, const double3 angularVelocity, cudaStream_t stream)
+    void setAngularVelocity(const size_t index, const double3 angularVelocity)
     {
         if (index >= num()) return;
-
-        if (upload_)
-        {
-            copyDeviceToHost(stream);
-            upload_ = false;
-        }
 
         std::vector<double3> ang = angularVelocity_.hostRef();
         ang[index] = angularVelocity;
@@ -254,23 +228,21 @@ public:
 
     void initialize(const double3 minDomain, const double3 maxDomain, const size_t maxGPUThread, cudaStream_t stream)
     {
-        if (upload_) return;
-        
         double cellSizeOneDim = 0.;
-        if (num() > 0) 
+        const size_t numParticle = position_.hostSize();
+        if (numParticle > 0) 
         {
             copyHostToDevice(stream);
 
-            hashValue_.allocateDevice(num_device(), stream);
-            hashIndex_.allocateDevice(num_device(), stream);
+            hashValue_.allocateDevice(numParticle, stream);
+            hashIndex_.allocateDevice(numParticle, stream);
             if (maxGPUThread > 0) blockDim_ = maxGPUThread;
-            if (num_device() < maxGPUThread) blockDim_ = num_device();
-            gridDim_ = (num_device() + blockDim_ - 1) / blockDim_;
+            if (numParticle < maxGPUThread) blockDim_ = numParticle;
+            gridDim_ = (numParticle + blockDim_ - 1) / blockDim_;
 
             cellSizeOneDim = *std::max_element(radius_.hostRef().begin(), radius_.hostRef().end()) * 2.0;
         }
         spatialGrid_.set(minDomain, maxDomain, cellSizeOneDim, stream);
-        upload_ = true;
     }
 
     void outputVTU(const std::string& dir, const size_t iFrame, const size_t iStep, const double time) const
@@ -428,43 +400,8 @@ public:
         copyDeviceToHost(stream);
     }
 
-    void copyFromHost(const LSParticle& other)
-    {
-        // ---- particle state ----
-        position_.setHost(other.position_.hostRef());
-        velocity_.setHost(other.velocity_.hostRef());
-        angularVelocity_.setHost(other.angularVelocity_.hostRef());
-        force_.setHost(other.force_.hostRef());
-        torque_.setHost(other.torque_.hostRef());
-        orientation_.setHost(other.orientation_.hostRef());
-        radius_.setHost(other.radius_.hostRef());
-        inverseMass_.setHost(other.inverseMass_.hostRef());
-        inverseInertiaTensor_.setHost(other.inverseInertiaTensor_.hostRef());
-        normalStiffness_.setHost(other.normalStiffness_.hostRef());
-        shearStiffness_.setHost(other.shearStiffness_.hostRef());
-        frictionCoefficient_.setHost(other.frictionCoefficient_.hostRef());
-        restitutionCoefficient_.setHost(other.restitutionCoefficient_.hostRef());
-
-        // ---- per-particle level-set grid meta ----
-        gridNodeLocalOrigin_.setHost(other.gridNodeLocalOrigin_.hostRef());
-        inverseGridNodeSpacing_.setHost(other.inverseGridNodeSpacing_.hostRef());
-        gridNodeSize_.setHost(other.gridNodeSize_.hostRef());
-        gridNodePrefixSum_.setHost(other.gridNodePrefixSum_.hostRef());
-
-        // ---- LSGridNode (phi packed) ----
-        std::vector<double> phi = other.LSGridNode_.levelSetFunctionValueHostRef();
-        LSGridNode_.setHost(phi); // requires friendship or a setter
-
-        // ---- LSBoundaryNode (surface nodes + pid) ----
-        std::vector<double3> lp = other.LSBoundaryNode_.localPositionHostRef();
-        std::vector<int> pid = other.LSBoundaryNode_.particleIDHostRef();
-        LSBoundaryNode_.setHost(lp, pid);
-
-        upload_ = false; // host copy only; device pointers are not valid until you initialize()
-    }
-
-    const size_t num() const { return position_.hostSize(); }
-    const size_t num_device() const { return position_.deviceSize(); }
+    size_t num() const { return position_.hostSize(); }
+    size_t num_device() const { return position_.deviceSize(); }
     const size_t& gridDim() const { return gridDim_; }
     const size_t& blockDim() const { return blockDim_; }
 
@@ -489,14 +426,11 @@ public:
     int* hashValue() { return hashValue_.d_ptr; }
     int* hashIndex() { return hashIndex_.d_ptr; }
 
-    std::vector<double3> positionHostCopy() { return position_.getHostCopy(); }
-    std::vector<double3> velocityHostCopy() { return velocity_.getHostCopy(); }
-    std::vector<double3> angularVelocityHostCopy() { return angularVelocity_.getHostCopy(); }
-    std::vector<double3> forceHostCopy() { return force_.getHostCopy(); }
-    std::vector<double3> torqueHostCopy() { return torque_.getHostCopy(); }
-    std::vector<quaternion> orientationHostCopy() { return orientation_.getHostCopy(); }
-
     const std::vector<double3>& positionHostRef() const { return position_.hostRef(); }
+    const std::vector<double3>& velocityHostRef() { return velocity_.hostRef(); }
+    const std::vector<double3>& angularVelocityHostRef() { return angularVelocity_.hostRef(); }
+    const std::vector<double3>& forceHostRef() { return force_.hostRef(); }
+    const std::vector<double3>& torqueHostRef() { return torque_.hostRef(); }
     const std::vector<quaternion>& orientationHostRef() const { return orientation_.hostRef(); }
 
     LSGridNode LSGridNode_;
@@ -566,8 +500,6 @@ private:
 
     size_t gridDim_{1};
     size_t blockDim_{1};
-
-    bool upload_{false};
 
     std::vector<int3> LSBoundaryNodeConnectivity_;
 };

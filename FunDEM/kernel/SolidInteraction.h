@@ -6,6 +6,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
+#include <iomanip>
+#include <iostream>
 
 struct SolidInteraction
 {
@@ -21,9 +23,10 @@ public:
 
     void initialize(const size_t numMasterObject, const size_t maxGPUThread, cudaStream_t stream)
     {
-        const size_t num = numMaster_device();
-        if (numMasterObject == 0 || numMasterObject < num) return;
-        if (num == 0)
+        const size_t numMasterObject0 = masterNeighborPrefixSum_.hostSize();
+        if (numMasterObject <= numMasterObject0) return;
+        
+        if (numMasterObject0 == 0)
         {
             masterNeighborCount_.allocateDevice(numMasterObject, stream);
             masterNeighborPrefixSum_.allocateDevice(numMasterObject, stream);
@@ -32,9 +35,9 @@ public:
         else
         {
             masterNeighborPrefixSum_.copyDeviceToHost(stream);
-            for (size_t i = 0; i < numMasterObject - num; i++)
+            for (size_t i = 0; i < numMasterObject - numMasterObject0; i++)
             {
-                masterNeighborPrefixSum_.pushHost(masterNeighborPrefixSum_.hostRef()[num - 1]);
+                masterNeighborPrefixSum_.pushHost(masterNeighborPrefixSum_.hostRef()[numMasterObject0 - 1]);
             }
             masterNeighborPrefixSum_.copyHostToDevice(stream);
             masterNeighborCount_.allocateDevice(numMasterObject, stream);
@@ -72,7 +75,7 @@ public:
         stream);
     }
 
-    void updateNumPairFromNeighborPrefixSum(const size_t maxGPUThread, cudaStream_t stream)
+    void updateNumPair(const size_t maxGPUThread, cudaStream_t stream)
     {
         cudaStreamSynchronize(stream);
         cudaMemcpyAsync(&numPair_, masterNeighborPrefixSum_.d_ptr + masterNeighborPrefixSum_.deviceSize() - 1, 
@@ -268,22 +271,6 @@ public:
         copyDeviceToHost(stream);
     }
 
-    void copyFromHost(const SolidInteraction& other)
-    {
-        contactPoint_.setHost(other.contactPoint_.hostRef());
-        contactNormal_.setHost(other.contactNormal_.hostRef());
-        contactOverlap_.setHost(other.contactOverlap_.hostRef());
-        normalElasticEnergy_.setHost(other.normalElasticEnergy_.hostRef());
-        slidingElasticEnergy_.setHost(other.slidingElasticEnergy_.hostRef());
-        slidingSpring_.setHost(other.slidingSpring_.hostRef());
-        masterID_.setHost(other.masterID_.hostRef());
-        slaveID_.setHost(other.slaveID_.hostRef());
-
-        numPair_ = other.numPair_;
-
-        masterNeighborPrefixSum_.setHost(other.masterNeighborPrefixSum_.hostRef());
-    }
-
     double3* contactPoint() { return contactPoint_.d_ptr; }
     double3* contactNormal() { return contactNormal_.d_ptr; }
     double* contactOverlap() { return contactOverlap_.d_ptr; }
@@ -296,8 +283,8 @@ public:
     int* previousSlaveID() { return slaveID0_.d_ptr; }
 
     size_t numPair_device() const { return static_cast<size_t>(numPair_); }
-    size_t pairGridDim() const { return pairGridDim_; }
-    size_t pairBlockDim() const { return pairBlockDim_; }
+    const size_t& pairGridDim() const { return pairGridDim_; }
+    const size_t& pairBlockDim() const { return pairBlockDim_; }
 
     int* masterNeighborCount() { return masterNeighborCount_.d_ptr; }
     int* masterNeighborPrefixSum() { return masterNeighborPrefixSum_.d_ptr; }
@@ -305,33 +292,33 @@ public:
 
     size_t numMaster() const { return masterNeighborPrefixSum_.hostSize(); }
     size_t numMaster_device() const { return masterNeighborPrefixSum_.deviceSize(); }
-    size_t masterGridDim() const { return masterGridDim_; }
-    size_t masterBlockDim() const { return masterBlockDim_; }
+    const size_t& masterGridDim() const { return masterGridDim_; }
+    const size_t& masterBlockDim() const { return masterBlockDim_; }
 
-    std::vector<double3> contactPointHostCopy()
+    const std::vector<double3> contactPointHostRef() const
     {
-        std::vector<double3> v = contactPoint_.getHostCopy();
+        std::vector<double3> v = contactPoint_.hostRef();
         v.resize(numPair_device());
         return v;
     }
 
-    std::vector<double3> contactNormalHostCopy()
+    const std::vector<double3> contactNormalHostRef() const
     {
-        std::vector<double3> v = contactNormal_.getHostCopy();
+        std::vector<double3> v = contactNormal_.hostRef();
         v.resize(numPair_device());
         return v;
     }
 
-    std::vector<int> masterIDHostCopy()
+    const std::vector<int> masterIDHostRef() const
     {
-        std::vector<int> v = masterID_.getHostCopy();
+        std::vector<int> v = masterID_.hostRef();
         v.resize(numPair_device());
         return v;
     }
 
-    std::vector<int> slaveIDHostCopy()
+    const std::vector<int> slaveIDHostRef() const
     {
-        std::vector<int> v = slaveID_.getHostCopy();
+        std::vector<int> v = slaveID_.hostRef();
         v.resize(numPair_device());
         return v;
     }

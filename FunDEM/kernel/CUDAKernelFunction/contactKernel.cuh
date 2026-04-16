@@ -264,6 +264,39 @@ const size_t gridD,
 const size_t blockD,
 cudaStream_t stream);
 
+extern "C" void launchAddGhostLevelSetParticleContactForceTorque(double3* slidingSpring, 
+double* normalElasticEnergy, 
+double* slidingElasticEnergy, 
+const double3* contactPoint, 
+const double3* contactNormal,
+const double* overlap,
+const int* boundaryNodePointed,
+const int* objectPointing,
+
+const double3* localPosition_bNode,
+const int* particleID_bNode,
+
+double3* force_p,
+double3* torque_p,
+const double3* position_p,
+const double3* velocity_p,
+const double3* angularVelocity_p,
+const double* inverseMass_p,
+const double* normalStiffness_p,
+const double* shearStiffness_p,
+const double* frictionCoefficient_p,
+const double* restitutionCoefficient_p,
+
+const double3* position_gp,
+const double3* velocity_gp,
+
+const double timeStep,
+
+const size_t numPair,
+const size_t gridD,
+const size_t blockD,
+cudaStream_t stream);
+
 extern "C" void launchAddBondedForceTorque(double3* bondPoint,
 double* maxNormalStress,
 double* maxShearStress,

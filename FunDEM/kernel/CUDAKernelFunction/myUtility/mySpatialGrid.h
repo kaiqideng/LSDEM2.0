@@ -1,6 +1,6 @@
 #pragma once
 #include "myHostDeviceArray.h"
-#include "myVec.h"
+#include "myQua.h"
 
 /**
  * @brief Compute the 3D uniform-grid cell index of a point.
@@ -30,12 +30,89 @@ const double3 inverseCellSize)
     int((position.z - minBound.z) * inverseCellSize.z));
 }
 
-extern "C" void launchUpdateSpatialGridHashStartEnd(double3* position, 
-int* hashIndex, 
+extern "C" void launchUpdateSpatialGridHashStartEnd(int* hashIndex, 
 int* hashValue, 
+const double3* position, 
 
-int* cellHashStart,
-int* cellHashEnd,
+int* gridHashStart,
+int* gridHashEnd,
+
+const double3 minBound,
+const double3 maxBound,
+const double3 inverseCellSize,
+const int3 gridSize3D,
+const size_t numGrid,
+
+const size_t numObject,
+const size_t gridD_GPU, 
+const size_t blockD_GPU, 
+cudaStream_t stream_GPU);
+
+extern "C" void launchUpdatePositionOutOfBoundary(double3* position,
+const double3 minBound,
+const double3 maxBound,
+const size_t numObject,
+const size_t gridD,
+const size_t blockD,
+cudaStream_t stream);
+
+extern "C" void launchUpdateVelocityPositionOrientationOutOfSector(double3* velocity,
+double3* position,
+quaternion* orientation,
+const double3 minBound,
+const size_t numObject,
+const size_t gridD,
+const size_t blockD,
+cudaStream_t stream);
+
+extern "C" void launchCalculateXYDirectionGhostPosition(double3* ghostPosition_XD,
+double3* ghostPosition_YD,
+double3* ghostPosition_XYD,
+
+const double3* position,
+
+const double3 minBound,
+const double3 maxBound,
+const double3 inverseCellSize,
+const int3 gridSize3D,
+
+const size_t numObject,
+const size_t gridD,
+const size_t blockD,
+cudaStream_t stream);
+
+extern "C" void launchCalculateSectorGhostVelocityPositionOrientation(double3* ghostVelocity_R90,
+double3* ghostVelocity_R180,
+double3* ghostVelocity_R270,
+
+double3* ghostPosition_R90,
+double3* ghostPosition_R180,
+double3* ghostPosition_R270,
+
+quaternion* ghostOrientation_R90,
+quaternion* ghostOrientation_R180,
+quaternion* ghostOrientation_R270,
+
+const double3* velocity,
+const double3* position,
+const quaternion* orientation,
+
+const double3 minBound,
+const double3 maxBound,
+const double3 inverseCellSize,
+const int3 gridSize3D,
+
+const size_t numObject,
+const size_t gridD,
+const size_t blockD,
+cudaStream_t stream);
+
+extern "C" void launchUpdateGhostSpatialGridHashStartEnd(int* hashIndex, 
+int* hashValue, 
+const double3* ghostPosition, 
+
+int* gridHashStart,
+int* gridHashEnd,
 
 const double3 minBound,
 const double3 maxBound,
