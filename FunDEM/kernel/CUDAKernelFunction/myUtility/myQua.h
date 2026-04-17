@@ -128,17 +128,17 @@ HOST_DEVICE inline double3 reverseRotateVectorByQuaternion(double3 v, quaternion
     return v + (t * q.q0) + cross(q_vec, t);
 }
 
-HOST_DEVICE inline quaternion rotateQuaternion(const quaternion& q, const double3& rotationVector)
+HOST_DEVICE inline quaternion rotateQuaternion(const quaternion& q, const double3& omega)
 {
     // =========================
-    // angle = |rotationVector|
+    // angle = |omega|
     // =========================
     const double theta2 =
-        rotationVector.x * rotationVector.x +
-        rotationVector.y * rotationVector.y +
-        rotationVector.z * rotationVector.z;
+        omega.x * omega.x +
+        omega.y * omega.y +
+        omega.z * omega.z;
 
-    if (theta2 < 1e-30) return q;
+    if (isZero(theta2)) return q;
 
     const double theta = sqrt(theta2);
     const double invTheta = 1.0 / theta;
@@ -146,9 +146,9 @@ HOST_DEVICE inline quaternion rotateQuaternion(const quaternion& q, const double
     // =========================
     // unit axis
     // =========================
-    const double ux = rotationVector.x * invTheta;
-    const double uy = rotationVector.y * invTheta;
-    const double uz = rotationVector.z * invTheta;
+    const double ux = omega.x * invTheta;
+    const double uy = omega.y * invTheta;
+    const double uz = omega.z * invTheta;
 
     // =========================
     // rotation quaternion
@@ -176,17 +176,5 @@ HOST_DEVICE inline quaternion rotateQuaternion(const quaternion& q, const double
     // =========================
     // normalize
     // =========================
-    const double norm = sqrt(result.q0 * result.q0 +
-                                result.q1 * result.q1 +
-                                result.q2 * result.q2 +
-                                result.q3 * result.q3);
-
-    if (norm < 1e-30) return make_quaternion(1.0, 0.0, 0.0, 0.0);
-
-    const double inv = 1.0 / norm;
-
-    return make_quaternion(result.q0 * inv,
-                           result.q1 * inv,
-                           result.q2 * inv,
-                           result.q3 * inv);
+    return normalize(result);
 }

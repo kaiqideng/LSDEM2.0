@@ -6,16 +6,20 @@
 
 struct Ghost
 {
+private:
+    HostDeviceArray1D<double3> ghostVelocity_;
+    HostDeviceArray1D<double3> ghostPosition_;
+    HostDeviceArray1D<quaternion> ghostOrientation_;
+
+    HostDeviceArray1D<int> ghostHashValue_;
+    HostDeviceArray1D<int> ghostHashIndex_;
+
+    HostDeviceArray1D<int> ghostGridHashStart_;
+    HostDeviceArray1D<int> ghostGridHashEndt_;
+
+    SolidInteraction ghostSolidInteraction_;
+    
 public:
-    Ghost() = default;
-    ~Ghost() = default;
-
-    Ghost(const Ghost&) = delete;
-    Ghost& operator=(const Ghost&) = delete;
-
-    Ghost(Ghost&&) noexcept = default;
-    Ghost& operator=(Ghost&&) noexcept = default;
-
     bool initialize(const LSParticle& LS, const size_t maxGPUThread, cudaStream_t stream)
     {
         const size_t numParticle = LS.num();
@@ -150,30 +154,26 @@ public:
         stream);
     }
 
-    size_t numGhost_device() const { return ghostPosition_.deviceSize(); }
     double3* ghostVelocity() { return ghostVelocity_.d_ptr; }
     double3* ghostPosition() { return ghostPosition_.d_ptr; }
     quaternion* ghostOrientation() { return ghostOrientation_.d_ptr; }
-
-private:
-    HostDeviceArray1D<double3> ghostVelocity_;
-    HostDeviceArray1D<double3> ghostPosition_;
-    HostDeviceArray1D<quaternion> ghostOrientation_;
-
-    HostDeviceArray1D<int> ghostHashValue_;
-    HostDeviceArray1D<int> ghostHashIndex_;
-
-    HostDeviceArray1D<int> ghostGridHashStart_;
-    HostDeviceArray1D<int> ghostGridHashEndt_;
-
-    SolidInteraction ghostSolidInteraction_;
 };
 
 struct PeriodicBoundaryXY2D
 {
+    PeriodicBoundaryXY2D() = default;
+    ~PeriodicBoundaryXY2D() = default;
+
+    PeriodicBoundaryXY2D(const PeriodicBoundaryXY2D&) = delete;
+    PeriodicBoundaryXY2D& operator=(const PeriodicBoundaryXY2D&) = delete;
+
+    PeriodicBoundaryXY2D(PeriodicBoundaryXY2D&&) noexcept = default;
+    PeriodicBoundaryXY2D& operator=(PeriodicBoundaryXY2D&&) noexcept = default;
+
+public:
     void turnOn() { ativateFlag_ = true; }
 
-    void turnOff() { ativateFlag_ = false; }
+    void turnOff() { ativateFlag_ = false; initializeFlag_ = false; }
 
     bool isActived() { return ativateFlag_; }
 
@@ -184,14 +184,13 @@ struct PeriodicBoundaryXY2D
         if (X_.initialize(LS, maxGPUThread, stream) && Y_.initialize(LS, maxGPUThread, stream) &&
         XY_.initialize(LS, maxGPUThread, stream))
         {
-            numGhost_ = LS.num();
             initializeFlag_ = true;
         }
     }
 
     void updateGhostSpatialGrid(LSParticle& LS, cudaStream_t stream)
     {
-        if (!initializeFlag_ || LS.num_device() != numGhost_) return;
+        if (!initializeFlag_) return;
 
         launchUpdatePositionOutOfBoundary(LS.position(), 
         LS.spatialGrid_.minimumBoundary(), 
@@ -225,7 +224,7 @@ struct PeriodicBoundaryXY2D
 
     void buildGhostInteraction(LSParticle& LS, const size_t maxGPUThread, cudaStream_t stream)
     {
-        if (!initializeFlag_ || LS.num_device() != numGhost_) return;
+        if (!initializeFlag_) return;
 
         X_.buildInteraction(LS, maxGPUThread, stream);
         Y_.buildInteraction(LS, maxGPUThread, stream);
@@ -234,7 +233,7 @@ struct PeriodicBoundaryXY2D
 
     void addGhostForceTorque(LSParticle& LS, const double timeStep, cudaStream_t stream)
     {
-        if (!initializeFlag_ || LS.num_device() != numGhost_) return;
+        if (!initializeFlag_) return;
 
         cudaMemcpyAsync(X_.ghostVelocity(), LS.velocity(), LS.num_device() * sizeof(double3), cudaMemcpyDeviceToDevice, stream);
         cudaMemcpyAsync(Y_.ghostVelocity(), LS.velocity(), LS.num_device() * sizeof(double3), cudaMemcpyDeviceToDevice, stream);
@@ -251,14 +250,23 @@ private:
     Ghost XY_;
     bool ativateFlag_{false};
     bool initializeFlag_{false};
-    size_t numGhost_{0};
 };
 
 struct PeriodicBoundarySector
 {
+    PeriodicBoundarySector() = default;
+    ~PeriodicBoundarySector() = default;
+
+    PeriodicBoundarySector(const PeriodicBoundarySector&) = delete;
+    PeriodicBoundarySector& operator=(const PeriodicBoundarySector&) = delete;
+
+    PeriodicBoundarySector(PeriodicBoundarySector&&) noexcept = default;
+    PeriodicBoundarySector& operator=(PeriodicBoundarySector&&) noexcept = default;
+
+public:
     void turnOn() { ativateFlag_ = true; }
 
-    void turnOff() { ativateFlag_ = false; }
+    void turnOff() { ativateFlag_ = false; initializeFlag_ = false; }
 
     bool isActived() { return ativateFlag_; }
 
@@ -269,14 +277,13 @@ struct PeriodicBoundarySector
         if (R90_.initialize(LS, maxGPUThread, stream) && R180_.initialize(LS, maxGPUThread, stream) &&
         R270_.initialize(LS, maxGPUThread, stream))
         {
-            numGhost_ = LS.num();
             initializeFlag_ = true;
         }
     }
 
     void updateGhostSpatialGrid(LSParticle& LS, cudaStream_t stream)
     {
-        if (!initializeFlag_ || LS.num_device() != numGhost_) return;
+        if (!initializeFlag_) return;
 
         launchUpdateVelocityPositionOrientationOutOfSector(LS.velocity(), 
         LS.position(), 
@@ -315,7 +322,7 @@ struct PeriodicBoundarySector
 
     void buildGhostInteraction(LSParticle& LS, const size_t maxGPUThread, cudaStream_t stream)
     {
-        if (!initializeFlag_ || LS.num_device() != numGhost_) return;
+        if (!initializeFlag_) return;
 
         R90_.buildInteraction(LS, maxGPUThread, stream);
         R180_.buildInteraction(LS, maxGPUThread, stream);
@@ -324,7 +331,7 @@ struct PeriodicBoundarySector
 
     void addGhostForceTorque(LSParticle& LS, const double timeStep, cudaStream_t stream)
     {
-        if (!initializeFlag_ || LS.num_device() != numGhost_) return;
+        if (!initializeFlag_) return;
 
         launchCalculateSectorGhostVelocityPositionOrientation(R90_.ghostVelocity(), 
         R180_.ghostVelocity(), 

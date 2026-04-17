@@ -145,7 +145,7 @@ HOST_DEVICE inline double3 rotateVector(const double3 v, const double3 omega)
     const double theta2 = dot(omega, omega);
 
     // Small-angle threshold (tune if you want)
-    if (theta2 < 1e-20)
+    if (isZero(theta2))
     {
         // 2nd-order expansion: exp([omega]x) v
         const double3 oxv  = cross(omega, v);

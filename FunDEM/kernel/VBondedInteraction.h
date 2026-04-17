@@ -202,16 +202,16 @@ public:
     }
 
     /**
-     * @brief Output bonded interaction state to a VTU file.
-     *
-     * Each bonded interaction is written as one VTK_VERTEX point located at
-     * the bond center centerPoint_. Bond state variables are stored as point data.
-     *
-     * @param dir Output directory.
-     * @param iFrame Output frame index.
-     * @param iStep Time step index.
-     * @param time Physical simulation time.
-     */
+    * @brief Output bonded interaction state to VTU (binary appended format).
+    *
+    * Each bond is stored as VTK_VERTEX at centerPoint_.
+    * PointData stores bond state variables.
+    *
+    * @param dir     Output directory
+    * @param iFrame  Frame index
+    * @param iStep   Step index
+    * @param time    Physical time
+    */
     void outputVTU(const std::string& dir, const size_t iFrame, const size_t iStep, const double time) const
     {
         if (numPair() == 0) return;
@@ -235,144 +235,129 @@ public:
         const std::vector<double>& maxNormalStress = maxNormalStress_.hostRef();
         const std::vector<double>& maxShearStress = maxShearStress_.hostRef();
 
-        std::ofstream out(fname.str());
+        // -------------------------------------------------------------------------
+        std::vector<float> points(3 * N);
+        std::vector<int32_t> connectivity(N), offsets(N);
+        std::vector<uint8_t> types(N, 1);
+
+        std::vector<int32_t> mid(masterObjectID.begin(), masterObjectID.end());
+        std::vector<int32_t> sid(slaveObjectID.begin(), slaveObjectID.end());
+        std::vector<int32_t> act(activated.begin(), activated.end());
+
+        std::vector<float> un(N), us(N), ub(N), ut(N);
+        std::vector<float> sn(N), ss(N);
+
+        for (size_t i = 0; i < N; ++i)
+        {
+            points[3*i+0] = (float)point[i].x;
+            points[3*i+1] = (float)point[i].y;
+            points[3*i+2] = (float)point[i].z;
+
+            connectivity[i] = (int32_t)i;
+            offsets[i] = (int32_t)(i + 1);
+
+            un[i] = (float)Un[i];
+            us[i] = (float)Us[i];
+            ub[i] = (float)Ub[i];
+            ut[i] = (float)Ut[i];
+
+            sn[i] = (float)maxNormalStress[i];
+            ss[i] = (float)maxShearStress[i];
+        }
+
+        // -------------------------------------------------------------------------
+        size_t offset = 0;
+        auto B = [&](size_t n) { return sizeof(uint64_t) + n; };
+
+        size_t off_p = offset; offset += B(points.size()*sizeof(float));
+        size_t off_c = offset; offset += B(connectivity.size()*sizeof(int32_t));
+        size_t off_o = offset; offset += B(offsets.size()*sizeof(int32_t));
+        size_t off_t = offset; offset += B(types.size()*sizeof(uint8_t));
+
+        size_t off_mid = offset; offset += B(mid.size()*sizeof(int32_t));
+        size_t off_sid = offset; offset += B(sid.size()*sizeof(int32_t));
+        size_t off_act = offset; offset += B(act.size()*sizeof(int32_t));
+
+        size_t off_un = offset; offset += B(un.size()*sizeof(float));
+        size_t off_us = offset; offset += B(us.size()*sizeof(float));
+        size_t off_ub = offset; offset += B(ub.size()*sizeof(float));
+        size_t off_ut = offset; offset += B(ut.size()*sizeof(float));
+
+        size_t off_sn = offset; offset += B(sn.size()*sizeof(float));
+        size_t off_ss = offset; offset += B(ss.size()*sizeof(float));
+
+        std::ofstream out(fname.str(), std::ios::binary);
         if (!out) throw std::runtime_error("Cannot open " + fname.str());
 
+        // -------------------------------------------------------------------------
         out << "<?xml version=\"1.0\"?>\n";
-        out << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" byte_order=\"LittleEndian\">\n";
-        out << "  <UnstructuredGrid>\n";
-        out << "    <FieldData>\n";
-        out << "      <DataArray type=\"Float32\" Name=\"TIME\" NumberOfTuples=\"1\" format=\"ascii\"> "
-            << static_cast<float>(time) << " </DataArray>\n";
-        out << "      <DataArray type=\"Int32\" Name=\"STEP\" NumberOfTuples=\"1\" format=\"ascii\"> "
-            << static_cast<int32_t>(iStep) << " </DataArray>\n";
-        out << "    </FieldData>\n";
-        out << "    <Piece NumberOfPoints=\"" << N
-            << "\" NumberOfCells=\"" << N << "\">\n";
+        out << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" "
+            "byte_order=\"LittleEndian\" header_type=\"UInt64\">\n";
+        out << "<UnstructuredGrid>\n";
 
-        // ---------------------------------------------------------------------
-        // Points
-        // ---------------------------------------------------------------------
-        out << "      <Points>\n";
-        out << "        <DataArray type=\"Float32\" NumberOfComponents=\"3\" format=\"ascii\">\n";
+        out << "<FieldData>\n";
+        out << "<DataArray type=\"Float32\" Name=\"TIME\" NumberOfTuples=\"1\" format=\"ascii\">" << (float)time << "</DataArray>\n";
+        out << "<DataArray type=\"Int32\" Name=\"STEP\" NumberOfTuples=\"1\" format=\"ascii\">" << (int32_t)iStep << "</DataArray>\n";
+        out << "</FieldData>\n";
 
-        for (size_t i = 0; i < N; ++i)
+        out << "<Piece NumberOfPoints=\"" << N << "\" NumberOfCells=\"" << N << "\">\n";
+
+        out << "<Points>\n";
+        out << "<DataArray type=\"Float32\" NumberOfComponents=\"3\" format=\"appended\" offset=\"" << off_p << "\"/>\n";
+        out << "</Points>\n";
+
+        out << "<Cells>\n";
+        out << "<DataArray type=\"Int32\" Name=\"connectivity\" format=\"appended\" offset=\"" << off_c << "\"/>\n";
+        out << "<DataArray type=\"Int32\" Name=\"offsets\" format=\"appended\" offset=\"" << off_o << "\"/>\n";
+        out << "<DataArray type=\"UInt8\" Name=\"types\" format=\"appended\" offset=\"" << off_t << "\"/>\n";
+        out << "</Cells>\n";
+
+        out << "<PointData Scalars=\"activated\">\n";
+        out << "<DataArray type=\"Int32\" Name=\"masterObjectID\" format=\"appended\" offset=\"" << off_mid << "\"/>\n";
+        out << "<DataArray type=\"Int32\" Name=\"slaveObjectID\" format=\"appended\" offset=\"" << off_sid << "\"/>\n";
+        out << "<DataArray type=\"Int32\" Name=\"activated\" format=\"appended\" offset=\"" << off_act << "\"/>\n";
+
+        out << "<DataArray type=\"Float32\" Name=\"normalElasticEnergy\" format=\"appended\" offset=\"" << off_un << "\"/>\n";
+        out << "<DataArray type=\"Float32\" Name=\"shearElasticEnergy\" format=\"appended\" offset=\"" << off_us << "\"/>\n";
+        out << "<DataArray type=\"Float32\" Name=\"bendingElasticEnergy\" format=\"appended\" offset=\"" << off_ub << "\"/>\n";
+        out << "<DataArray type=\"Float32\" Name=\"torsionElasticEnergy\" format=\"appended\" offset=\"" << off_ut << "\"/>\n";
+
+        out << "<DataArray type=\"Float32\" Name=\"maxNormalStress\" format=\"appended\" offset=\"" << off_sn << "\"/>\n";
+        out << "<DataArray type=\"Float32\" Name=\"maxShearStress\" format=\"appended\" offset=\"" << off_ss << "\"/>\n";
+        out << "</PointData>\n";
+
+        out << "</Piece>\n</UnstructuredGrid>\n";
+        out << "<AppendedData encoding=\"raw\">\n_";
+
+        auto W = [&](const void* d, size_t n)
         {
-            out << "          "
-                << static_cast<float>(point[i].x) << " "
-                << static_cast<float>(point[i].y) << " "
-                << static_cast<float>(point[i].z) << "\n";
-        }
+            uint64_t s = n;
+            out.write((char*)&s, sizeof(uint64_t));
+            out.write((char*)d, n);
+        };
 
-        out << "        </DataArray>\n";
-        out << "      </Points>\n";
+        W(points.data(), points.size()*sizeof(float));
+        W(connectivity.data(), connectivity.size()*sizeof(int32_t));
+        W(offsets.data(), offsets.size()*sizeof(int32_t));
+        W(types.data(), types.size()*sizeof(uint8_t));
 
-        // ---------------------------------------------------------------------
-        // Cells
-        // ---------------------------------------------------------------------
-        out << "      <Cells>\n";
+        W(mid.data(), mid.size()*sizeof(int32_t));
+        W(sid.data(), sid.size()*sizeof(int32_t));
+        W(act.data(), act.size()*sizeof(int32_t));
 
-        out << "        <DataArray type=\"Int32\" Name=\"connectivity\" format=\"ascii\">\n";
-        for (size_t i = 0; i < N; ++i)
-        {
-            out << "          " << static_cast<int32_t>(i) << "\n";
-        }
-        out << "        </DataArray>\n";
+        W(un.data(), un.size()*sizeof(float));
+        W(us.data(), us.size()*sizeof(float));
+        W(ub.data(), ub.size()*sizeof(float));
+        W(ut.data(), ut.size()*sizeof(float));
 
-        out << "        <DataArray type=\"Int32\" Name=\"offsets\" format=\"ascii\">\n";
-        for (size_t i = 0; i < N; ++i)
-        {
-            out << "          " << static_cast<int32_t>(i + 1) << "\n";
-        }
-        out << "        </DataArray>\n";
+        W(sn.data(), sn.size()*sizeof(float));
+        W(ss.data(), ss.size()*sizeof(float));
 
-        out << "        <DataArray type=\"UInt8\" Name=\"types\" format=\"ascii\">\n";
-        for (size_t i = 0; i < N; ++i)
-        {
-            out << "          1\n"; // VTK_VERTEX
-        }
-        out << "        </DataArray>\n";
-
-        out << "      </Cells>\n";
-
-        // ---------------------------------------------------------------------
-        // Point data
-        // ---------------------------------------------------------------------
-        out << "      <PointData Scalars=\"activated\">\n";
-
-        out << "        <DataArray type=\"Int32\" Name=\"masterObjectID\" format=\"ascii\">\n";
-        for (size_t i = 0; i < N; ++i)
-        {
-            out << "          " << static_cast<int32_t>(masterObjectID[i]) << "\n";
-        }
-        out << "        </DataArray>\n";
-
-        out << "        <DataArray type=\"Int32\" Name=\"slaveObjectID\" format=\"ascii\">\n";
-        for (size_t i = 0; i < N; ++i)
-        {
-            out << "          " << static_cast<int32_t>(slaveObjectID[i]) << "\n";
-        }
-        out << "        </DataArray>\n";
-
-        out << "        <DataArray type=\"Int32\" Name=\"activated\" format=\"ascii\">\n";
-        for (size_t i = 0; i < N; ++i)
-        {
-            out << "          " << static_cast<int32_t>(activated[i]) << "\n";
-        }
-        out << "        </DataArray>\n";
-
-        out << "        <DataArray type=\"Float32\" Name=\"normalElasticEnergy\" format=\"ascii\">\n";
-        for (size_t i = 0; i < N; ++i)
-        {
-            out << "          " << static_cast<float>(Un[i]) << "\n";
-        }
-        out << "        </DataArray>\n";
-
-        out << "        <DataArray type=\"Float32\" Name=\"shearElasticEnergy\" format=\"ascii\">\n";
-        for (size_t i = 0; i < N; ++i)
-        {
-            out << "          " << static_cast<float>(Us[i]) << "\n";
-        }
-        out << "        </DataArray>\n";
-
-        out << "        <DataArray type=\"Float32\" Name=\"bendingElasticEnergy\" format=\"ascii\">\n";
-        for (size_t i = 0; i < N; ++i)
-        {
-            out << "          " << static_cast<float>(Ub[i]) << "\n";
-        }
-        out << "        </DataArray>\n";
-
-        out << "        <DataArray type=\"Float32\" Name=\"torsionElasticEnergy\" format=\"ascii\">\n";
-        for (size_t i = 0; i < N; ++i)
-        {
-            out << "          " << static_cast<float>(Ut[i]) << "\n";
-        }
-        out << "        </DataArray>\n";
-
-        out << "        <DataArray type=\"Float32\" Name=\"maxNormalStress\" format=\"ascii\">\n";
-        for (size_t i = 0; i < N; ++i)
-        {
-            out << "          " << static_cast<float>(maxNormalStress[i]) << "\n";
-        }
-        out << "        </DataArray>\n";
-
-        out << "        <DataArray type=\"Float32\" Name=\"maxShearStress\" format=\"ascii\">\n";
-        for (size_t i = 0; i < N; ++i)
-        {
-            out << "          " << static_cast<float>(maxShearStress[i]) << "\n";
-        }
-        out << "        </DataArray>\n";
-
-        out << "      </PointData>\n";
-
-        out << "    </Piece>\n";
-        out << "  </UnstructuredGrid>\n";
-        out << "</VTKFile>\n";
+        out << "\n</AppendedData>\n</VTKFile>\n";
     }
 
     void finalize(cudaStream_t stream)
     {
-        if (numPair_device() == 0) return;
         copyDeviceToHost(stream);
     }
 

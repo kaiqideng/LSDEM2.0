@@ -112,7 +112,7 @@ const size_t numBoundaryNode)
                     phi011,
                     phi111);
 
-                    if (ovelap > 0.) count++;
+                    if (ovelap >= 0.) count++;
                 }
             }
         }
@@ -254,7 +254,7 @@ const size_t numBoundaryNode)
                     phi011,
                     phi111);
 
-                    if (ovelap > 0.)
+                    if (ovelap >= 0.)
                     {
                         const int index_w = base_w + count;
                         double3 n_c = interpolateLevelSetFunctionGradient(x,
@@ -406,7 +406,7 @@ const size_t numBoundaryNode)
                     phi011,
                     phi111);
 
-                    if (ovelap > 0.) count++;
+                    if (ovelap >= 0.) count++;
                 }
             }
         }
@@ -547,7 +547,7 @@ const size_t numBoundaryNode)
                     phi011,
                     phi111);
 
-                    if (ovelap > 0.)
+                    if (ovelap >= 0.)
                     {
                         const int index_w = base_w + count;
                         double3 n_c = interpolateLevelSetFunctionGradient(x,

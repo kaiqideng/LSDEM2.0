@@ -245,6 +245,21 @@ public:
         spatialGrid_.set(minDomain, maxDomain, cellSizeOneDim, stream);
     }
 
+    /**
+    * @brief Export Level Set boundary mesh to VTU (binary appended format)
+    *
+    * Output:
+    * - Points (world position)
+    * - Cells (triangle connectivity)
+    * - PointData: particleID, velocity
+    *
+    * @param dir     Output directory
+    * @param iFrame  Frame index
+    * @param iStep   Simulation step
+    * @param time    Simulation time
+    *
+    * @note Binary appended VTU format (UInt64 header)
+    */
     void outputVTU(const std::string& dir, const size_t iFrame, const size_t iStep, const double time) const
     {
         if (num() == 0) return;
@@ -252,9 +267,7 @@ public:
         MKDIR(dir.c_str());
 
         std::ostringstream fname;
-        fname << dir << "/LSObjectMesh_"
-            << std::setw(4) << std::setfill('0') << iFrame
-            << ".vtu";
+        fname << dir << "/LSObjectMesh_" << std::setw(4) << std::setfill('0') << iFrame << ".vtu";
 
         const size_t N = LSBoundaryNode_.num();
         const size_t M = LSBoundaryNodeConnectivity_.size();
@@ -267,131 +280,297 @@ public:
         const std::vector<double3>& w_p = angularVelocity_.hostRef();
         const std::vector<quaternion>& q_p = orientation_.hostRef();
 
-        std::ofstream out(fname.str());
-        if (!out) throw std::runtime_error("Cannot open " + fname.str());
-
-        out << "<?xml version=\"1.0\"?>\n";
-        out << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" byte_order=\"LittleEndian\">\n";
-        out << "  <UnstructuredGrid>\n";
-        out << "    <FieldData>\n";
-        out << "      <DataArray type=\"Float32\" Name=\"TIME\" NumberOfTuples=\"1\" format=\"ascii\"> "
-            << static_cast<float>(time) << " </DataArray>\n";
-        out << "      <DataArray type=\"Int32\" Name=\"STEP\" NumberOfTuples=\"1\" format=\"ascii\"> "
-            << static_cast<int32_t>(iStep) << " </DataArray>\n";
-        out << "    </FieldData>\n";
-        out << "    <Piece NumberOfPoints=\"" << N
-            << "\" NumberOfCells=\"" << M << "\">\n";
-
         // -------------------------------------------------------------------------
-        // Points
+        // Precompute arrays
         // -------------------------------------------------------------------------
-        out << "      <Points>\n";
-        out << "        <DataArray type=\"Float32\" NumberOfComponents=\"3\" format=\"ascii\">\n";
+        std::vector<float> points(3 * N);
+        std::vector<int32_t> particleID(N);
+        std::vector<float> velocity(3 * N);
 
         for (size_t i = 0; i < N; ++i)
         {
             const int p = pID[i];
 
             double3 pw = make_double3(0.0, 0.0, 0.0);
+            double3 vw = make_double3(0.0, 0.0, 0.0);
 
             if (p >= 0 && static_cast<size_t>(p) < p_p.size())
             {
                 pw = p_p[p] + rotateVectorByQuaternion(q_p[p], pLocal[i]);
+
+                if (static_cast<size_t>(p) < v_p.size() &&
+                    static_cast<size_t>(p) < w_p.size())
+                {
+                    vw = v_p[p] + cross(w_p[p], pw - p_p[p]);
+                }
             }
 
-            out << "          "
-                << static_cast<float>(pw.x) << " "
-                << static_cast<float>(pw.y) << " "
-                << static_cast<float>(pw.z) << "\n";
+            points[3 * i + 0] = static_cast<float>(pw.x);
+            points[3 * i + 1] = static_cast<float>(pw.y);
+            points[3 * i + 2] = static_cast<float>(pw.z);
+
+            velocity[3 * i + 0] = static_cast<float>(vw.x);
+            velocity[3 * i + 1] = static_cast<float>(vw.y);
+            velocity[3 * i + 2] = static_cast<float>(vw.z);
+
+            particleID[i] = static_cast<int32_t>(p);
         }
 
-        out << "        </DataArray>\n";
-        out << "      </Points>\n";
-
         // -------------------------------------------------------------------------
-        // Cells
+        // Connectivity
         // -------------------------------------------------------------------------
-        out << "      <Cells>\n";
+        std::vector<int32_t> connectivity(3 * M);
+        std::vector<int32_t> offsets(M);
+        std::vector<uint8_t> types(M, 5);
 
-        out << "        <DataArray type=\"Int32\" Name=\"connectivity\" format=\"ascii\">\n";
         for (size_t i = 0; i < M; ++i)
         {
             const int3 tri = LSBoundaryNodeConnectivity_[i];
 
-            if (tri.x < 0 || tri.y < 0 || tri.z < 0 ||
-                static_cast<size_t>(tri.x) >= N ||
-                static_cast<size_t>(tri.y) >= N ||
-                static_cast<size_t>(tri.z) >= N)
-            {
-                std::cerr << "[LSParticle] Invalid triangle index at triangle "
-                        << i << std::endl;
-                out << "          0 0 0\n";
-                continue;
-            }
+            connectivity[3 * i + 0] = tri.x;
+            connectivity[3 * i + 1] = tri.y;
+            connectivity[3 * i + 2] = tri.z;
 
-            out << "          "
-                << tri.x << " "
-                << tri.y << " "
-                << tri.z << "\n";
+            offsets[i] = static_cast<int32_t>(3 * (i + 1));
         }
-        out << "        </DataArray>\n";
-
-        out << "        <DataArray type=\"Int32\" Name=\"offsets\" format=\"ascii\">\n";
-        for (size_t i = 0; i < M; ++i)
-        {
-            out << "          " << static_cast<int32_t>(3 * (i + 1)) << "\n";
-        }
-        out << "        </DataArray>\n";
-
-        out << "        <DataArray type=\"UInt8\" Name=\"types\" format=\"ascii\">\n";
-        for (size_t i = 0; i < M; ++i)
-        {
-            out << "          5\n"; // VTK_TRIANGLE
-        }
-        out << "        </DataArray>\n";
-
-        out << "      </Cells>\n";
 
         // -------------------------------------------------------------------------
-        // Point data
+        // Offsets (VTU appended layout)
         // -------------------------------------------------------------------------
-        out << "      <PointData Vectors=\"velocity\">\n";
+        size_t offset = 0;
 
-        out << "        <DataArray type=\"Int32\" Name=\"particleID\" format=\"ascii\">\n";
+        auto blockSize = [](size_t nBytes)
+        {
+            return sizeof(uint64_t) + nBytes;
+        };
+
+        size_t off_points = offset; offset += blockSize(points.size() * sizeof(float));
+        size_t off_conn = offset; offset += blockSize(connectivity.size() * sizeof(int32_t));
+        size_t off_offs = offset; offset += blockSize(offsets.size() * sizeof(int32_t));
+        size_t off_types = offset; offset += blockSize(types.size() * sizeof(uint8_t));
+        size_t off_pid = offset; offset += blockSize(particleID.size() * sizeof(int32_t));
+        size_t off_vel = offset; offset += blockSize(velocity.size() * sizeof(float));
+
+        std::ofstream out(fname.str(), std::ios::binary);
+        if (!out) throw std::runtime_error("Cannot open " + fname.str());
+
+        // -------------------------------------------------------------------------
+        // XML header
+        // -------------------------------------------------------------------------
+        out << "<?xml version=\"1.0\"?>\n";
+        out << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" "
+            "byte_order=\"LittleEndian\" header_type=\"UInt64\">\n";
+
+        out << "<UnstructuredGrid>\n";
+
+        out << "<FieldData>\n";
+        out << "<DataArray type=\"Float32\" Name=\"TIME\" NumberOfTuples=\"1\" format=\"ascii\"> "
+            << static_cast<float>(time) << " </DataArray>\n";
+        out << "<DataArray type=\"Int32\" Name=\"STEP\" NumberOfTuples=\"1\" format=\"ascii\"> "
+            << static_cast<int32_t>(iStep) << " </DataArray>\n";
+        out << "</FieldData>\n";
+
+        out << "<Piece NumberOfPoints=\"" << N
+            << "\" NumberOfCells=\"" << M << "\">\n";
+
+        // -------------------------------------------------------------------------
+        // Points
+        // -------------------------------------------------------------------------
+        out << "<Points>\n";
+        out << "<DataArray type=\"Float32\" NumberOfComponents=\"3\" "
+            "format=\"appended\" offset=\"" << off_points << "\"/>\n";
+        out << "</Points>\n";
+
+        // -------------------------------------------------------------------------
+        // Cells
+        // -------------------------------------------------------------------------
+        out << "<Cells>\n";
+        out << "<DataArray type=\"Int32\" Name=\"connectivity\" "
+            "format=\"appended\" offset=\"" << off_conn << "\"/>\n";
+        out << "<DataArray type=\"Int32\" Name=\"offsets\" "
+            "format=\"appended\" offset=\"" << off_offs << "\"/>\n";
+        out << "<DataArray type=\"UInt8\" Name=\"types\" "
+            "format=\"appended\" offset=\"" << off_types << "\"/>\n";
+        out << "</Cells>\n";
+
+        // -------------------------------------------------------------------------
+        // PointData
+        // -------------------------------------------------------------------------
+        out << "<PointData Vectors=\"velocity\">\n";
+        out << "<DataArray type=\"Int32\" Name=\"particleID\" "
+            "format=\"appended\" offset=\"" << off_pid << "\"/>\n";
+        out << "<DataArray type=\"Float32\" Name=\"velocity\" "
+            "NumberOfComponents=\"3\" format=\"appended\" offset=\"" << off_vel << "\"/>\n";
+        out << "</PointData>\n";
+
+        out << "</Piece>\n";
+        out << "</UnstructuredGrid>\n";
+
+        // -------------------------------------------------------------------------
+        // Appended binary data
+        // -------------------------------------------------------------------------
+        out << "<AppendedData encoding=\"raw\">\n_";
+
+        auto writeBlock = [&](const void* data, size_t nBytes)
+        {
+            uint64_t sz = static_cast<uint64_t>(nBytes);
+            out.write(reinterpret_cast<const char*>(&sz), sizeof(uint64_t));
+            out.write(reinterpret_cast<const char*>(data), nBytes);
+        };
+
+        writeBlock(points.data(), points.size() * sizeof(float));
+        writeBlock(connectivity.data(), connectivity.size() * sizeof(int32_t));
+        writeBlock(offsets.data(), offsets.size() * sizeof(int32_t));
+        writeBlock(types.data(), types.size() * sizeof(uint8_t));
+        writeBlock(particleID.data(), particleID.size() * sizeof(int32_t));
+        writeBlock(velocity.data(), velocity.size() * sizeof(float));
+
+        out << "\n</AppendedData>\n";
+        out << "</VTKFile>\n";
+    }
+
+    /**
+    * @brief Export particle state to VTU (binary appended format)
+    *
+    * Output:
+    * - Points: particle position
+    * - PointData:
+    *   - velocity
+    *   - angularVelocity
+    *   - orientation (quaternion as vec4)
+    *
+    * @param dir     Output directory
+    * @param iFrame  Frame index
+    * @param iStep   Simulation step
+    * @param time    Simulation time
+    *
+    * @note Binary appended VTU format (UInt64 header)
+    */
+    void outputParticleVTU(const std::string& dir, const size_t iFrame, const size_t iStep, const double time) const
+    {
+        const size_t N = num();
+        if (N == 0) return;
+
+        MKDIR(dir.c_str());
+
+        std::ostringstream fname;
+        fname << dir << "/Particle_" << std::setw(4) << std::setfill('0') << iFrame << ".vtu";
+
+        const std::vector<double3>& p = position_.hostRef();
+        const std::vector<double3>& v = velocity_.hostRef();
+        const std::vector<double3>& w = angularVelocity_.hostRef();
+        const std::vector<quaternion>& q = orientation_.hostRef();
+
+        // -------------------------------------------------------------------------
+        // Precompute arrays
+        // -------------------------------------------------------------------------
+        std::vector<float> points(3 * N);
+        std::vector<float> vel(3 * N);
+        std::vector<float> angVel(3 * N);
+        std::vector<float> ori(4 * N);
+
         for (size_t i = 0; i < N; ++i)
         {
-            out << "          " << static_cast<int32_t>(pID[i]) << "\n";
-        }
-        out << "        </DataArray>\n";
+            points[3 * i + 0] = (float)p[i].x;
+            points[3 * i + 1] = (float)p[i].y;
+            points[3 * i + 2] = (float)p[i].z;
 
-        out << "        <DataArray type=\"Float32\" Name=\"velocity\" NumberOfComponents=\"3\" format=\"ascii\">\n";
-        for (size_t i = 0; i < N; ++i)
+            vel[3 * i + 0] = (float)v[i].x;
+            vel[3 * i + 1] = (float)v[i].y;
+            vel[3 * i + 2] = (float)v[i].z;
+
+            angVel[3 * i + 0] = (float)w[i].x;
+            angVel[3 * i + 1] = (float)w[i].y;
+            angVel[3 * i + 2] = (float)w[i].z;
+
+            ori[4 * i + 0] = (float)q[i].q0;
+            ori[4 * i + 1] = (float)q[i].q1;
+            ori[4 * i + 2] = (float)q[i].q2;
+            ori[4 * i + 3] = (float)q[i].q3;
+        }
+
+        // -------------------------------------------------------------------------
+        // Offsets
+        // -------------------------------------------------------------------------
+        size_t offset = 0;
+
+        auto B = [&](size_t n) { return sizeof(uint64_t) + n; };
+
+        size_t off_p = offset; offset += B(points.size() * sizeof(float));
+        size_t off_v = offset; offset += B(vel.size() * sizeof(float));
+        size_t off_w = offset; offset += B(angVel.size() * sizeof(float));
+        size_t off_q = offset; offset += B(ori.size() * sizeof(float));
+
+        std::ofstream out(fname.str(), std::ios::binary);
+        if (!out) throw std::runtime_error("Cannot open " + fname.str());
+
+        // -------------------------------------------------------------------------
+        // XML header
+        // -------------------------------------------------------------------------
+        out << "<?xml version=\"1.0\"?>\n";
+        out << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" "
+            "byte_order=\"LittleEndian\" header_type=\"UInt64\">\n";
+        out << "<UnstructuredGrid>\n";
+
+        out << "<FieldData>\n";
+        out << "<DataArray type=\"Float32\" Name=\"TIME\" NumberOfTuples=\"1\" format=\"ascii\">"
+            << (float)time << "</DataArray>\n";
+        out << "<DataArray type=\"Int32\" Name=\"STEP\" NumberOfTuples=\"1\" format=\"ascii\">"
+            << (int32_t)iStep << "</DataArray>\n";
+        out << "</FieldData>\n";
+
+        out << "<Piece NumberOfPoints=\"" << N << "\" NumberOfCells=\"0\">\n";
+
+        // -------------------------------------------------------------------------
+        // Points
+        // -------------------------------------------------------------------------
+        out << "<Points>\n";
+        out << "<DataArray type=\"Float32\" NumberOfComponents=\"3\" "
+            "format=\"appended\" offset=\"" << off_p << "\"/>\n";
+        out << "</Points>\n";
+
+        // -------------------------------------------------------------------------
+        // Cells
+        // -------------------------------------------------------------------------
+        out << "<Cells/>\n";
+
+        // -------------------------------------------------------------------------
+        // PointData
+        // -------------------------------------------------------------------------
+        out << "<PointData Vectors=\"velocity\">\n";
+
+        out << "<DataArray type=\"Float32\" Name=\"velocity\" "
+            "NumberOfComponents=\"3\" format=\"appended\" offset=\"" << off_v << "\"/>\n";
+
+        out << "<DataArray type=\"Float32\" Name=\"angularVelocity\" "
+            "NumberOfComponents=\"3\" format=\"appended\" offset=\"" << off_w << "\"/>\n";
+
+        out << "<DataArray type=\"Float32\" Name=\"orientation\" "
+            "NumberOfComponents=\"4\" format=\"appended\" offset=\"" << off_q << "\"/>\n";
+
+        out << "</PointData>\n";
+
+        out << "</Piece>\n";
+        out << "</UnstructuredGrid>\n";
+
+        // -------------------------------------------------------------------------
+        // Appended binary data
+        // -------------------------------------------------------------------------
+        out << "<AppendedData encoding=\"raw\">\n_";
+
+        auto writeBlock = [&](const void* data, size_t nBytes)
         {
-            const int p = pID[i];
+            uint64_t sz = (uint64_t)nBytes;
+            out.write((char*)&sz, sizeof(uint64_t));
+            out.write((char*)data, nBytes);
+        };
 
-            double3 vw = make_double3(0.0, 0.0, 0.0);
+        writeBlock(points.data(), points.size() * sizeof(float));
+        writeBlock(vel.data(),    vel.size() * sizeof(float));
+        writeBlock(angVel.data(), angVel.size() * sizeof(float));
+        writeBlock(ori.data(),    ori.size() * sizeof(float));
 
-            if (p >= 0 &&
-                static_cast<size_t>(p) < p_p.size() &&
-                static_cast<size_t>(p) < v_p.size() &&
-                static_cast<size_t>(p) < w_p.size() &&
-                static_cast<size_t>(p) < q_p.size())
-            {
-                const double3 pw = p_p[p] + rotateVectorByQuaternion(q_p[p], pLocal[i]);
-                vw = v_p[p] + cross(w_p[p], pw - p_p[p]);
-            }
-
-            out << "          "
-                << static_cast<float>(vw.x) << " "
-                << static_cast<float>(vw.y) << " "
-                << static_cast<float>(vw.z) << "\n";
-        }
-        out << "        </DataArray>\n";
-
-        out << "      </PointData>\n";
-
-        out << "    </Piece>\n";
-        out << "  </UnstructuredGrid>\n";
+        out << "\n</AppendedData>\n";
         out << "</VTKFile>\n";
     }
 

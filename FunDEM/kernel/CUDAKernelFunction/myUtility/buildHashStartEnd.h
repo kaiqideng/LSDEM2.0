@@ -29,7 +29,6 @@
 // - In debug builds, the function prints cudaGetLastError() around key steps and
 //   catches thrust::system_error to surface runtime failures.
 // -----------------------------------------------------------------------------
-
 extern "C" void buildHashStartEnd(int* start, 
 int* end, 
 int* hashIndex, 
