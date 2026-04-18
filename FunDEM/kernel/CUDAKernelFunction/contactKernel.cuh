@@ -1,7 +1,7 @@
 #pragma once
 #include "myUtility/myQua.h"
 
-static __device__ __forceinline__ double3 integrateSlidingSpring(const double3 springPrev, 
+static __device__ __forceinline__ double3 integrateSlidingSpring(const double3 previousSpring, 
 const double3 springVelocity, 
 const double3 contactNormal, 
 const double3 normalContactForce, 
@@ -13,16 +13,16 @@ const double timeStep)
 	double3 spring = make_double3(0., 0., 0.);
 	if (frictionCoefficient > 0. && stiffness > 0.)
 	{
-		double3 springPrev1 = springPrev - dot(springPrev, contactNormal) * contactNormal;
-		double absoluteSpringPrev1 = length(springPrev1);
-		if (!isZero(absoluteSpringPrev1))
+		double3 previousSpring1 = previousSpring - dot(previousSpring, contactNormal) * contactNormal;
+		const double absolutePreviousSpring1 = length(previousSpring1);
+		if (!isZero(absolutePreviousSpring1))
 		{
-			springPrev1 *= length(springPrev) / absoluteSpringPrev1;
+			previousSpring1 *= length(previousSpring) / absolutePreviousSpring1;
 		}
-		spring = springPrev1 + springVelocity * timeStep;
+		spring = previousSpring1 + springVelocity * timeStep;
 		double3 springForce = -stiffness * spring - dampingCoefficient * springVelocity;
-		double absoluteSpringForce = length(springForce);
-		double absoluteNormalContactForce = length(normalContactForce);
+		const double absoluteSpringForce = length(springForce);
+		const double absoluteNormalContactForce = length(normalContactForce);
 		if (!isZero(absoluteSpringForce) && absoluteSpringForce > frictionCoefficient * absoluteNormalContactForce)
 		{
 			double ratio = frictionCoefficient * absoluteNormalContactForce / absoluteSpringForce;
@@ -207,7 +207,6 @@ const double* overlap,
 const int* boundaryNodePointed,
 const int* objectPointing,
 
-const double3* localPosition_bNode,
 const int* particleID_bNode,
 
 double3* force_p,
@@ -237,7 +236,6 @@ const double* overlap,
 const int* boundaryNodePointed,
 const int* objectPointing,
 
-const double3* localPosition_bNode,
 const int* particleID_bNode,
 
 double3* force_p,
@@ -273,7 +271,6 @@ const double* overlap,
 const int* boundaryNodePointed,
 const int* objectPointing,
 
-const double3* localPosition_bNode,
 const int* particleID_bNode,
 
 double3* force_p,

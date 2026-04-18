@@ -66,7 +66,7 @@ namespace LevelSetObject
         double3 gridOrigin{0.0, 0.0, 0.0};
         int3 gridNodeSize{0, 0, 0};
         double gridNodeSpacing{0.0};
-        std::vector<double> gridNodeLevelSetFunctionValue;
+        std::vector<double> gridNodeSignedDistance;
     };
 
     //=========================================================================
@@ -101,7 +101,7 @@ namespace LevelSetObject
 
         bool isGridBuilt() const
         {
-            return !gridInfo_.gridNodeLevelSetFunctionValue.empty();
+            return !gridInfo_.gridNodeSignedDistance.empty();
         }
 
         // =========================
@@ -173,7 +173,7 @@ namespace LevelSetObject
 
             gridInfo_.gridOrigin = backgroundGridMin;
             gridInfo_.gridNodeSize = make_int3(numGridNodesX, numGridNodesY, numGridNodesZ);
-            gridInfo_.gridNodeLevelSetFunctionValue.assign(
+            gridInfo_.gridNodeSignedDistance.assign(
                 size_t(numGridNodesX) * size_t(numGridNodesY) * size_t(numGridNodesZ),
                 0.0);
 
@@ -215,7 +215,7 @@ namespace LevelSetObject
                                 (implicitFunctionValue <= 0.0 ? -1.0 : 1.0) * 0.5 * gridSpacing;
                         }
 
-                        gridInfo_.gridNodeLevelSetFunctionValue[
+                        gridInfo_.gridNodeSignedDistance[
                             linearIndex3D(make_int3(gridNodeI, gridNodeJ, gridNodeK),
                                         gridInfo_.gridNodeSize)] = signedDistanceLikeLevelSetValue;
                     }
@@ -265,7 +265,7 @@ namespace LevelSetObject
 
             const size_t N = size_t(nx) * size_t(ny) * size_t(nz);
 
-            if (gridInfo_.gridNodeLevelSetFunctionValue.size() != N) return;
+            if (gridInfo_.gridNodeSignedDistance.size() != N) return;
 
             const std::string fileName = fileNamePrefix + "LSGrid.vtu";
 
@@ -332,13 +332,13 @@ namespace LevelSetObject
 
             out << "      </Cells>\n";
 
-            out << "      <PointData Scalars=\"levelSetValue\">\n";
+            out << "      <PointData Scalars=\"signedDistance\">\n";
 
-            out << "        <DataArray type=\"Float32\" Name=\"levelSetValue\" format=\"ascii\">\n";
+            out << "        <DataArray type=\"Float32\" Name=\"signedDistance\" format=\"ascii\">\n";
             for (size_t id = 0; id < N; ++id)
             {
                 out << "          "
-                    << static_cast<float>(gridInfo_.gridNodeLevelSetFunctionValue[id]) << "\n";
+                    << static_cast<float>(gridInfo_.gridNodeSignedDistance[id]) << "\n";
             }
             out << "        </DataArray>\n";
 

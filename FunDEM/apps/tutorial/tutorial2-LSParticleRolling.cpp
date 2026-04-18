@@ -108,7 +108,7 @@ int main(const int argc, char** argv)
         SP.setParams(s.rx, s.ry, s.rz, s.ee, s.en);
         SP.buildGridByResolution();
         solver_.addLSParticle(SP.vertexPosition(), 
-        SP.gridInfo().gridNodeLevelSetFunctionValue, 
+        SP.gridInfo().gridNodeSignedDistance, 
         SP.gridInfo().gridOrigin, 
         SP.gridInfo().gridNodeSize, 
         SP.gridInfo().gridNodeSpacing, 
@@ -131,7 +131,7 @@ int main(const int argc, char** argv)
     CW.buildGridByResolution(100);
     solver_.addWall(CW.vertexPosition(), 
     CW.triangleVertexIndex(), 
-    CW.gridInfo().gridNodeLevelSetFunctionValue, 
+    CW.gridInfo().gridNodeSignedDistance, 
     CW.gridInfo().gridOrigin, 
     CW.gridInfo().gridNodeSize, 
     CW.gridInfo().gridNodeSpacing, 

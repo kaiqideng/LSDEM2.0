@@ -56,7 +56,7 @@ int main(const int argc, char** argv)
         const double3 particlePosition = make_double3(i * 2. * particleRadii, 0., 0.);
 
         solver_.addLSParticle(S.vertexPosition(), 
-        S.gridInfo().gridNodeLevelSetFunctionValue, 
+        S.gridInfo().gridNodeSignedDistance, 
         S.gridInfo().gridOrigin, 
         S.gridInfo().gridNodeSize, 
         S.gridInfo().gridNodeSpacing, 

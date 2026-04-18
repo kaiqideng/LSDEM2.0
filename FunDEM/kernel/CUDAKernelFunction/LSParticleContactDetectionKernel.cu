@@ -5,7 +5,7 @@ __global__ void countLevelSetBoundaryNodeInteractionsKernel(int* boundaryNodeNei
 const double3* localPosition_bNode, 
 const int* particleID_bNode, 
 
-const double* LSFV_gNode, 
+const double* SDF_gNode, 
 
 const double3* position_p,
 const quaternion* orientation_p,
@@ -91,14 +91,14 @@ const size_t numBoundaryNode)
 
                     int gridNodeStartB = 0;
                     if (idxB > 0) gridNodeStartB = gridNodePrefixSum_p[idxB - 1];
-                    const double phi000 = LSFV_gNode[gridNodeStartB + linearIndex3D(make_int3(i0, j0, k0), gridNodeSizeB)];
-                    const double phi100 = LSFV_gNode[gridNodeStartB + linearIndex3D(make_int3(i1, j0, k0), gridNodeSizeB)];
-                    const double phi010 = LSFV_gNode[gridNodeStartB + linearIndex3D(make_int3(i0, j1, k0), gridNodeSizeB)];
-                    const double phi110 = LSFV_gNode[gridNodeStartB + linearIndex3D(make_int3(i1, j1, k0), gridNodeSizeB)];
-                    const double phi001 = LSFV_gNode[gridNodeStartB + linearIndex3D(make_int3(i0, j0, k1), gridNodeSizeB)];
-                    const double phi101 = LSFV_gNode[gridNodeStartB + linearIndex3D(make_int3(i1, j0, k1), gridNodeSizeB)];
-                    const double phi011 = LSFV_gNode[gridNodeStartB + linearIndex3D(make_int3(i0, j1, k1), gridNodeSizeB)];
-                    const double phi111 = LSFV_gNode[gridNodeStartB + linearIndex3D(make_int3(i1, j1, k1), gridNodeSizeB)];
+                    const double phi000 = SDF_gNode[gridNodeStartB + linearIndex3D(make_int3(i0, j0, k0), gridNodeSizeB)];
+                    const double phi100 = SDF_gNode[gridNodeStartB + linearIndex3D(make_int3(i1, j0, k0), gridNodeSizeB)];
+                    const double phi010 = SDF_gNode[gridNodeStartB + linearIndex3D(make_int3(i0, j1, k0), gridNodeSizeB)];
+                    const double phi110 = SDF_gNode[gridNodeStartB + linearIndex3D(make_int3(i1, j1, k0), gridNodeSizeB)];
+                    const double phi001 = SDF_gNode[gridNodeStartB + linearIndex3D(make_int3(i0, j0, k1), gridNodeSizeB)];
+                    const double phi101 = SDF_gNode[gridNodeStartB + linearIndex3D(make_int3(i1, j0, k1), gridNodeSizeB)];
+                    const double phi011 = SDF_gNode[gridNodeStartB + linearIndex3D(make_int3(i0, j1, k1), gridNodeSizeB)];
+                    const double phi111 = SDF_gNode[gridNodeStartB + linearIndex3D(make_int3(i1, j1, k1), gridNodeSizeB)];
 
                     const double ovelap = -interpolateLevelSetFunctionValue(x, 
                     y, 
@@ -136,7 +136,7 @@ const int* particleID_bNode,
 const int* boundaryNodeNeighborPrefixSum, 
 const int* boundaryNodeNeighborPrefixSum_old, 
 
-const double* LSFV_gNode, 
+const double* SDF_gNode, 
 
 const double3* position_p,
 const quaternion* orientation_p,
@@ -233,14 +233,14 @@ const size_t numBoundaryNode)
                     int gridNodeStartB = 0;
                     if (idxB > 0) gridNodeStartB = gridNodePrefixSum_p[idxB - 1];
 
-                    const double phi000 = LSFV_gNode[gridNodeStartB + linearIndex3D(make_int3(i0, j0, k0), gridNodeSizeB)];
-                    const double phi100 = LSFV_gNode[gridNodeStartB + linearIndex3D(make_int3(i1, j0, k0), gridNodeSizeB)];
-                    const double phi010 = LSFV_gNode[gridNodeStartB + linearIndex3D(make_int3(i0, j1, k0), gridNodeSizeB)];
-                    const double phi110 = LSFV_gNode[gridNodeStartB + linearIndex3D(make_int3(i1, j1, k0), gridNodeSizeB)];
-                    const double phi001 = LSFV_gNode[gridNodeStartB + linearIndex3D(make_int3(i0, j0, k1), gridNodeSizeB)];
-                    const double phi101 = LSFV_gNode[gridNodeStartB + linearIndex3D(make_int3(i1, j0, k1), gridNodeSizeB)];
-                    const double phi011 = LSFV_gNode[gridNodeStartB + linearIndex3D(make_int3(i0, j1, k1), gridNodeSizeB)];
-                    const double phi111 = LSFV_gNode[gridNodeStartB + linearIndex3D(make_int3(i1, j1, k1), gridNodeSizeB)];
+                    const double phi000 = SDF_gNode[gridNodeStartB + linearIndex3D(make_int3(i0, j0, k0), gridNodeSizeB)];
+                    const double phi100 = SDF_gNode[gridNodeStartB + linearIndex3D(make_int3(i1, j0, k0), gridNodeSizeB)];
+                    const double phi010 = SDF_gNode[gridNodeStartB + linearIndex3D(make_int3(i0, j1, k0), gridNodeSizeB)];
+                    const double phi110 = SDF_gNode[gridNodeStartB + linearIndex3D(make_int3(i1, j1, k0), gridNodeSizeB)];
+                    const double phi001 = SDF_gNode[gridNodeStartB + linearIndex3D(make_int3(i0, j0, k1), gridNodeSizeB)];
+                    const double phi101 = SDF_gNode[gridNodeStartB + linearIndex3D(make_int3(i1, j0, k1), gridNodeSizeB)];
+                    const double phi011 = SDF_gNode[gridNodeStartB + linearIndex3D(make_int3(i0, j1, k1), gridNodeSizeB)];
+                    const double phi111 = SDF_gNode[gridNodeStartB + linearIndex3D(make_int3(i1, j1, k1), gridNodeSizeB)];
 
                     const double ovelap = -interpolateLevelSetFunctionValue(x,
                     y,
@@ -300,7 +300,7 @@ __global__ void countLevelSetBoundaryNodeFixedParticleInteractionsKernel(int* bo
 const double3* localPosition_bNode, 
 const int* particleID_bNode, 
 
-const double* LSFV_gNode_fp, 
+const double* SDF_gNode_fp, 
 
 const double3* position_p,
 const quaternion* orientation_p,
@@ -385,14 +385,14 @@ const size_t numBoundaryNode)
 
                     int gridNodeStartB = 0;
                     if (idxB > 0) gridNodeStartB = gridNodePrefixSum_fp[idxB - 1];
-                    const double phi000 = LSFV_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i0, j0, k0), gridNodeSizeB)];
-                    const double phi100 = LSFV_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i1, j0, k0), gridNodeSizeB)];
-                    const double phi010 = LSFV_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i0, j1, k0), gridNodeSizeB)];
-                    const double phi110 = LSFV_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i1, j1, k0), gridNodeSizeB)];
-                    const double phi001 = LSFV_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i0, j0, k1), gridNodeSizeB)];
-                    const double phi101 = LSFV_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i1, j0, k1), gridNodeSizeB)];
-                    const double phi011 = LSFV_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i0, j1, k1), gridNodeSizeB)];
-                    const double phi111 = LSFV_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i1, j1, k1), gridNodeSizeB)];
+                    const double phi000 = SDF_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i0, j0, k0), gridNodeSizeB)];
+                    const double phi100 = SDF_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i1, j0, k0), gridNodeSizeB)];
+                    const double phi010 = SDF_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i0, j1, k0), gridNodeSizeB)];
+                    const double phi110 = SDF_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i1, j1, k0), gridNodeSizeB)];
+                    const double phi001 = SDF_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i0, j0, k1), gridNodeSizeB)];
+                    const double phi101 = SDF_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i1, j0, k1), gridNodeSizeB)];
+                    const double phi011 = SDF_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i0, j1, k1), gridNodeSizeB)];
+                    const double phi111 = SDF_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i1, j1, k1), gridNodeSizeB)];
 
                     const double ovelap = -interpolateLevelSetFunctionValue(x, 
                     y, 
@@ -430,7 +430,7 @@ const int* particleID_bNode,
 const int* boundaryNodeNeighborPrefixSum, 
 const int* boundaryNodeNeighborPrefixSum_old, 
 
-const double* LSFV_gNode_fp, 
+const double* SDF_gNode_fp, 
 
 const double3* position_p,
 const quaternion* orientation_p,
@@ -526,14 +526,14 @@ const size_t numBoundaryNode)
                     int gridNodeStartB = 0;
                     if (idxB > 0) gridNodeStartB = gridNodePrefixSum_fp[idxB - 1];
 
-                    const double phi000 = LSFV_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i0, j0, k0), gridNodeSizeB)];
-                    const double phi100 = LSFV_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i1, j0, k0), gridNodeSizeB)];
-                    const double phi010 = LSFV_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i0, j1, k0), gridNodeSizeB)];
-                    const double phi110 = LSFV_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i1, j1, k0), gridNodeSizeB)];
-                    const double phi001 = LSFV_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i0, j0, k1), gridNodeSizeB)];
-                    const double phi101 = LSFV_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i1, j0, k1), gridNodeSizeB)];
-                    const double phi011 = LSFV_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i0, j1, k1), gridNodeSizeB)];
-                    const double phi111 = LSFV_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i1, j1, k1), gridNodeSizeB)];
+                    const double phi000 = SDF_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i0, j0, k0), gridNodeSizeB)];
+                    const double phi100 = SDF_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i1, j0, k0), gridNodeSizeB)];
+                    const double phi010 = SDF_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i0, j1, k0), gridNodeSizeB)];
+                    const double phi110 = SDF_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i1, j1, k0), gridNodeSizeB)];
+                    const double phi001 = SDF_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i0, j0, k1), gridNodeSizeB)];
+                    const double phi101 = SDF_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i1, j0, k1), gridNodeSizeB)];
+                    const double phi011 = SDF_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i0, j1, k1), gridNodeSizeB)];
+                    const double phi111 = SDF_gNode_fp[gridNodeStartB + linearIndex3D(make_int3(i1, j1, k1), gridNodeSizeB)];
 
                     const double ovelap = -interpolateLevelSetFunctionValue(x,
                     y,
@@ -591,22 +591,22 @@ const size_t numBoundaryNode)
 
 extern "C" void launchBuildLevelSetBoundaryNodeInteractions1st(int* boundaryNodeNeighborCount, 
 
-double3* localPosition_bNode,
-int* particleID_bNode,
+const double3* localPosition_bNode,
+const int* particleID_bNode,
 
-double* LSFV_gNode,
+const double* SDF_gNode,
 
-double3* position_p,
-quaternion* orientation_p,
-double* radius_p,
-double* inverseGridNodeSpacing_p,
-double3* gridNodeLocalOrigin_p,
-int3* gridNodeSize_p,
-int* gridNodePrefixSum_p,
-int* hashIndex_p,
+const double3* position_p,
+const quaternion* orientation_p,
+const double* radius_p,
+const double* inverseGridNodeSpacing_p,
+const double3* gridNodeLocalOrigin_p,
+const int3* gridNodeSize_p,
+const int* gridNodePrefixSum_p,
+const int* hashIndex_p,
 
-int* spatialGridHashStart,
-int* spatialGridHashEnd,
+const int* spatialGridHashStart,
+const int* spatialGridHashEnd,
 
 const double3 minBound,
 const double3 inverseCellSize,
@@ -621,7 +621,7 @@ cudaStream_t stream)
     localPosition_bNode,
     particleID_bNode,
 
-    LSFV_gNode,
+    SDF_gNode,
 
     position_p,
     orientation_p,
@@ -648,28 +648,29 @@ double3* contactNormal,
 double* contactOverlap,
 int* boundaryNodePointed,
 int* objectPointing,
-double3* slidingSpring_old,
-int* objectPointing_old,
 
-double3* localPosition_bNode,
-int* particleID_bNode,
+const double3* slidingSpring_old,
+const int* objectPointing_old,
 
-int* boundaryNodeNeighborPrefixSum,
-int* boundaryNodeNeighborPrefixSum_old,
+const double3* localPosition_bNode,
+const int* particleID_bNode,
 
-double* LSFV_gNode,
+const int* boundaryNodeNeighborPrefixSum,
+const int* boundaryNodeNeighborPrefixSum_old,
 
-double3* position_p,
-quaternion* orientation_p,
-double* radius_p,
-double* inverseGridNodeSpacing_p,
-double3* gridNodeLocalOrigin_p,
-int3* gridNodeSize_p,
-int* gridNodePrefixSum_p,
-int* hashIndex_p,
+const double* SDF_gNode,
 
-int* spatialGridHashStart,
-int* spatialGridHashEnd,
+const double3* position_p,
+const quaternion* orientation_p,
+const double* radius_p,
+const double* inverseGridNodeSpacing_p,
+const double3* gridNodeLocalOrigin_p,
+const int3* gridNodeSize_p,
+const int* gridNodePrefixSum_p,
+const int* hashIndex_p,
+
+const int* spatialGridHashStart,
+const int* spatialGridHashEnd,
 
 const double3 minBound,
 const double3 inverseCellSize,
@@ -695,7 +696,7 @@ cudaStream_t stream)
     boundaryNodeNeighborPrefixSum,
     boundaryNodeNeighborPrefixSum_old,
 
-    LSFV_gNode,
+    SDF_gNode,
 
     position_p,
     orientation_p,
@@ -718,24 +719,24 @@ cudaStream_t stream)
 
 extern "C" void launchBuildLevelSetBoundaryNodeFixedParticleInteractions1st(int* boundaryNodeNeighborCount, 
 
-double3* localPosition_bNode,
-int* particleID_bNode,
+const double3* localPosition_bNode,
+const int* particleID_bNode,
 
-double* LSFV_gNode_fp,
+const double* SDF_gNode_fp,
 
-double3* position_p,
-quaternion* orientation_p,
+const double3* position_p,
+const quaternion* orientation_p,
 
-double3* position_fp,
-quaternion* orientation_fp,
-double* inverseGridNodeSpacing_fp,
-double3* gridNodeLocalOrigin_fp,
-int3* gridNodeSize_fp,
-int* gridNodePrefixSum_fp,
-int* hashIndex_fp,
+const double3* position_fp,
+const quaternion* orientation_fp,
+const double* inverseGridNodeSpacing_fp,
+const double3* gridNodeLocalOrigin_fp,
+const int3* gridNodeSize_fp,
+const int* gridNodePrefixSum_fp,
+const int* hashIndex_fp,
 
-int* spatialGridHashStart_fp,
-int* spatialGridHashEnd_fp,
+const int* spatialGridHashStart_fp,
+const int* spatialGridHashEnd_fp,
 
 const double3 minBound_fp,
 const double3 inverseCellSize_fp,
@@ -750,7 +751,7 @@ cudaStream_t stream)
     localPosition_bNode,
     particleID_bNode,
 
-    LSFV_gNode_fp,
+    SDF_gNode_fp,
 
     position_p,
     orientation_p,
@@ -779,30 +780,31 @@ double3* contactNormal,
 double* contactOverlap,
 int* boundaryNodePointed,
 int* objectPointing,
-double3* slidingSpring_old,
-int* objectPointing_old,
 
-double3* localPosition_bNode,
-int* particleID_bNode,
+const double3* slidingSpring_old,
+const int* objectPointing_old,
 
-int* boundaryNodeNeighborPrefixSum,
-int* boundaryNodeNeighborPrefixSum_old,
+const double3* localPosition_bNode,
+const int* particleID_bNode,
 
-double* LSFV_gNode_fp,
+const int* boundaryNodeNeighborPrefixSum,
+const int* boundaryNodeNeighborPrefixSum_old,
 
-double3* position_p,
-quaternion* orientation_p,
+const double* SDF_gNode_fp,
 
-double3* position_fp,
-quaternion* orientation_fp,
-double* inverseGridNodeSpacing_fp,
-double3* gridNodeLocalOrigin_fp,
-int3* gridNodeSize_fp,
-int* gridNodePrefixSum_fp,
-int* hashIndex_fp,
+const double3* position_p,
+const quaternion* orientation_p,
 
-int* spatialGridHashStart_fp,
-int* spatialGridHashEnd_fp,
+const double3* position_fp,
+const quaternion* orientation_fp,
+const double* inverseGridNodeSpacing_fp,
+const double3* gridNodeLocalOrigin_fp,
+const int3* gridNodeSize_fp,
+const int* gridNodePrefixSum_fp,
+const int* hashIndex_fp,
+
+const int* spatialGridHashStart_fp,
+const int* spatialGridHashEnd_fp,
 
 const double3 minBound_fp,
 const double3 inverseCellSize_fp,
@@ -828,7 +830,7 @@ cudaStream_t stream)
     boundaryNodeNeighborPrefixSum,
     boundaryNodeNeighborPrefixSum_old,
 
-    LSFV_gNode_fp,
+    SDF_gNode_fp,
 
     position_p,
     orientation_p,

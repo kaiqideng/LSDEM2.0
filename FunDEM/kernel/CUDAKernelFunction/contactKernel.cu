@@ -55,7 +55,6 @@ const double* overlap,
 const int* boundaryNodePointed, 
 const int* objectPointing, 
 
-const double3* localPosition_bNode,
 const int* particleID_bNode,
 
 const double3* position_p, 
@@ -67,7 +66,7 @@ const double* shearStiffness_p,
 const double* frictionCoefficient_p, 
 const double* restitutionCoefficient_p, 
 
-const double dt,
+const double timeStep,
 const size_t numPair)
 {
     const size_t k = blockIdx.x * blockDim.x + threadIdx.x;
@@ -106,7 +105,7 @@ const size_t numPair)
 	double3 F_c = make_double3(0., 0., 0.);
 	double3 epsilon_s = slidingSpring[k];
 	LinearContact(F_c, epsilon_s, 
-	v_c_ij, n_ij, delta, dt, 
+	v_c_ij, n_ij, delta, timeStep, 
 	kn, ks, mu, res, effM);
 
 	slidingSpring[k] = epsilon_s;
@@ -130,7 +129,6 @@ const double* overlap,
 const int* boundaryNodePointed,
 const int* objectPointing, 
 
-const double3* localPosition_bNode,
 const int* particleID_bNode,
 
 const double3* position_p, 
@@ -148,7 +146,7 @@ const double3* angularVelocity_fp,
 const double* frictionCoefficient_fp, 
 const double* restitutionCoefficient_fp, 
 
-const double dt,
+const double timeStep,
 const size_t numPair)
 {
     const size_t k = blockIdx.x * blockDim.x + threadIdx.x;
@@ -182,7 +180,7 @@ const size_t numPair)
 	double3 F_c = make_double3(0., 0., 0.);
 	double3 epsilon_s = slidingSpring[k];
 	LinearContact(F_c, epsilon_s, 
-	v_c_ij, n_ij, delta, dt, 
+	v_c_ij, n_ij, delta, timeStep, 
 	kn_i, ks_i, mu, res, effM);
 	
 	slidingSpring[k] = epsilon_s;
@@ -204,7 +202,6 @@ const double* overlap,
 const int* boundaryNodePointed, 
 const int* objectPointing, 
 
-const double3* localPosition_bNode,
 const int* particleID_bNode,
 
 const double3* position_p, 
@@ -219,7 +216,7 @@ const double* restitutionCoefficient_p,
 const double3* position_gp, 
 const double3* velocity_gp, 
 
-const double dt,
+const double timeStep,
 const size_t numPair)
 {
     const size_t k = blockIdx.x * blockDim.x + threadIdx.x;
@@ -258,7 +255,7 @@ const size_t numPair)
 	double3 F_c = make_double3(0., 0., 0.);
 	double3 epsilon_s = slidingSpring[k];
 	LinearContact(F_c, epsilon_s, 
-	v_c_ij, n_ij, delta, dt, 
+	v_c_ij, n_ij, delta, timeStep, 
 	kn, ks, mu, res, effM);
 
 	slidingSpring[k] = epsilon_s;
@@ -362,7 +359,6 @@ const double* overlap,
 const int* boundaryNodePointed,
 const int* objectPointing,
 
-const double3* localPosition_bNode,
 const int* particleID_bNode,
 
 double3* force_p,
@@ -395,7 +391,6 @@ cudaStream_t stream)
 	boundaryNodePointed,
     objectPointing,
 
-    localPosition_bNode,
     particleID_bNode,
 
     position_p,
@@ -421,7 +416,6 @@ const double* overlap,
 const int* boundaryNodePointed,
 const int* objectPointing,
 
-const double3* localPosition_bNode,
 const int* particleID_bNode,
 
 double3* force_p,
@@ -460,7 +454,6 @@ cudaStream_t stream)
 	boundaryNodePointed,
     objectPointing,
 
-    localPosition_bNode,
     particleID_bNode,
 
     position_p,
@@ -492,7 +485,6 @@ const double* overlap,
 const int* boundaryNodePointed,
 const int* objectPointing,
 
-const double3* localPosition_bNode,
 const int* particleID_bNode,
 
 double3* force_p,
@@ -528,7 +520,6 @@ cudaStream_t stream)
 	boundaryNodePointed,
     objectPointing,
 
-    localPosition_bNode,
     particleID_bNode,
 
     position_p,

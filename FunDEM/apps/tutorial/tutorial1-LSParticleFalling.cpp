@@ -72,7 +72,7 @@ int main(const int argc, char** argv)
         quaternion q = randomQuaternionUniform_deterministic();
         
         solver_.addLSParticle(TMP.vertexPosition(), 
-        TMP.gridInfo().gridNodeLevelSetFunctionValue, 
+        TMP.gridInfo().gridNodeSignedDistance, 
         TMP.gridInfo().gridOrigin, 
         TMP.gridInfo().gridNodeSize, 
         TMP.gridInfo().gridNodeSpacing, 
@@ -93,7 +93,7 @@ int main(const int argc, char** argv)
     BW.buildGridByResolution();
     solver_.addWall(BW.vertexPosition(), 
     BW.triangleVertexIndex(),
-    BW.gridInfo().gridNodeLevelSetFunctionValue, 
+    BW.gridInfo().gridNodeSignedDistance, 
     BW.gridInfo().gridOrigin, 
     BW.gridInfo().gridNodeSize, 
     BW.gridInfo().gridNodeSpacing, 

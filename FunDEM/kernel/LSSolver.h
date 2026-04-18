@@ -26,7 +26,7 @@ public:
      * @brief Add one free level-set particle.
      *
      * @param boundaryNodeLocalPosition Local boundary node positions of the particle.
-     * @param gridNodeLevelSetFunctionValue Level-set values stored on the background grid nodes.
+     * @param gridNodeSignedDistance Signed distance stored on the background grid nodes.
      * @param gridNodeLocalOrigin Local origin of the level-set grid.
      * @param gridNodeSize Grid resolution in x-, y-, and z-directions.
      * @param gridNodeSpacing Uniform grid spacing of the level-set grid.
@@ -53,7 +53,7 @@ public:
      * it first downloads device -> host to keep host-side buffers consistent.
      */
     void addLSParticle(const std::vector<double3>& boundaryNodeLocalPosition,
-    const std::vector<double>& gridNodeLevelSetFunctionValue,
+    const std::vector<double>& gridNodeSignedDistance,
     const double3 gridNodeLocalOrigin,
     const int3 gridNodeSize,
     const double gridNodeSpacing,
@@ -87,7 +87,7 @@ public:
                 for (int z = 0; z < gridNodeSize.z; z++)
                 {
                     const int index = linearIndex3D(make_int3(x, y, z), gridNodeSize);
-                    const double H = smoothHeaviside(gridNodeLevelSetFunctionValue[index] / gridNodeSpacing, 1.5);
+                    const double H = smoothHeaviside(gridNodeSignedDistance[index] / gridNodeSpacing, 1.5);
                     mass += H;
                 }
             }
@@ -108,7 +108,7 @@ public:
                     for (int z = 0; z < gridNodeSize.z; z++)
                     {
                         const int index = linearIndex3D(make_int3(x, y, z), gridNodeSize);
-                        const double H = smoothHeaviside(gridNodeLevelSetFunctionValue[index] / gridNodeSpacing, 1.5);
+                        const double H = smoothHeaviside(gridNodeSignedDistance[index] / gridNodeSpacing, 1.5);
                         centroidLocalPosition.x += H * (gridNodeLocalOrigin.x + double(x) * gridNodeSpacing);
                         centroidLocalPosition.y += H * (gridNodeLocalOrigin.y + double(y) * gridNodeSpacing);
                         centroidLocalPosition.z += H * (gridNodeLocalOrigin.z + double(z) * gridNodeSpacing);
@@ -124,7 +124,7 @@ public:
                     for (int z = 0; z < gridNodeSize.z; z++)
                     {
                         const int index = linearIndex3D(make_int3(x, y, z), gridNodeSize);
-                        const double H = smoothHeaviside(gridNodeLevelSetFunctionValue[index] / gridNodeSpacing, 1.5);
+                        const double H = smoothHeaviside(gridNodeSignedDistance[index] / gridNodeSpacing, 1.5);
                         double3 r = gridNodeLocalOrigin + gridNodeSpacing * make_double3(double(x), double(y), double(z)) - centroidLocalPosition;
                         I.xx += H * (r.y * r.y + r.z * r.z) * m_gridNode;
                         I.yy += H * (r.x * r.x + r.z * r.z) * m_gridNode;
@@ -149,7 +149,7 @@ public:
 
         LSParticle_.add(boundaryNodeLocalPosition_new, 
         boundaryNodeConnectivity, 
-        gridNodeLevelSetFunctionValue, 
+        gridNodeSignedDistance, 
         gridNodeLocalOrigin_new, 
         gridNodeSize, 
         gridNodeSpacing, 
@@ -166,7 +166,7 @@ public:
     }
 
     void addLSParticle(const std::vector<double3>& boundaryNodeLocalPosition,
-    const std::vector<double>& gridNodeLevelSetFunctionValue,
+    const std::vector<double>& gridNodeSignedDistance,
     const double3 gridNodeLocalOrigin,
     const int3 gridNodeSize,
     const double gridNodeSpacing,
@@ -184,7 +184,7 @@ public:
     {
         LSParticle_.add(boundaryNodeLocalPosition, 
         boundaryNodeConnectivity, 
-        gridNodeLevelSetFunctionValue, 
+        gridNodeSignedDistance, 
         gridNodeLocalOrigin, 
         gridNodeSize, 
         gridNodeSpacing, 
@@ -205,7 +205,7 @@ public:
      *
      * @param objVertexLocalPosition Local mesh vertex positions of the wall object.
      * @param objTriangleVertexID Triangle connectivity of the wall mesh.
-     * @param gridNodeLevelSetFunctionValue Level-set values stored on the background grid nodes.
+     * @param gridNodeSignedDistance Signed distance stored on the background grid nodes.
      * @param gridNodeLocalOrigin Local origin of the level-set grid.
      * @param gridNodeSize Grid resolution in x-, y-, and z-directions.
      * @param gridNodeSpacing Uniform grid spacing of the level-set grid.
@@ -216,7 +216,7 @@ public:
      */
     void addWall(const std::vector<double3>& objVertexLocalPosition,
     const std::vector<int3>& objTriangleVertexID, 
-    const std::vector<double>& gridNodeLevelSetFunctionValue,
+    const std::vector<double>& gridNodeSignedDistance,
     const double3 gridNodeLocalOrigin,
     const int3 gridNodeSize,
     const double gridNodeSpacing,
@@ -227,7 +227,7 @@ public:
     {
         Wall_.add(objVertexLocalPosition, 
         objTriangleVertexID, 
-        gridNodeLevelSetFunctionValue, 
+        gridNodeSignedDistance, 
         gridNodeLocalOrigin, 
         gridNodeSize, 
         gridNodeSpacing, 
@@ -587,7 +587,7 @@ private:
         launchBuildLevelSetBoundaryNodeInteractions1st(LSParticleInteraction_.masterNeighborCount(), 
         LSParticle_.LSBoundaryNode_.localPosition(), 
         LSParticle_.LSBoundaryNode_.particleID(), 
-        LSParticle_.LSGridNode_.levelSetFunctionValue(), 
+        LSParticle_.LSGridNode_.signedDistanceField(), 
         LSParticle_.position(), 
         LSParticle_.orientation(), 
         LSParticle_.radius(),
@@ -622,7 +622,7 @@ private:
         LSParticle_.LSBoundaryNode_.particleID(), 
         LSParticleInteraction_.masterNeighborPrefixSum(), 
         LSParticleInteraction_.previousMasterNeighborPrefixSum(), 
-        LSParticle_.LSGridNode_.levelSetFunctionValue(), 
+        LSParticle_.LSGridNode_.signedDistanceField(), 
         LSParticle_.position(), 
         LSParticle_.orientation(), 
         LSParticle_.radius(), 
@@ -644,7 +644,7 @@ private:
         launchBuildLevelSetBoundaryNodeFixedParticleInteractions1st(LSParticleWallInteraction_.masterNeighborCount(), 
         LSParticle_.LSBoundaryNode_.localPosition(), 
         LSParticle_.LSBoundaryNode_.particleID(), 
-        Wall_.LSGridNode_.levelSetFunctionValue(), 
+        Wall_.LSGridNode_.signedDistanceField(), 
         LSParticle_.position(), 
         LSParticle_.orientation(), 
         Wall_.position(), 
@@ -680,7 +680,7 @@ private:
         LSParticle_.LSBoundaryNode_.particleID(), 
         LSParticleWallInteraction_.masterNeighborPrefixSum(), 
         LSParticleWallInteraction_.previousMasterNeighborPrefixSum(), 
-        Wall_.LSGridNode_.levelSetFunctionValue(), 
+        Wall_.LSGridNode_.signedDistanceField(), 
         LSParticle_.position(), 
         LSParticle_.orientation(), 
         Wall_.position(), 
@@ -713,7 +713,7 @@ private:
         cudaMemsetAsync(LSParticle_.torque(), 0, LSParticle_.num_device() * sizeof(double3), stream_);
     }
 
-    void addLSParticleContactForceTorque(const double halfTimeStep)
+    void addLSParticleContactForceTorque(const double timeStep)
     {
         launchAddLevelSetParticleContactForceTorque(LSParticleInteraction_.slidingSpring(), 
         LSParticleInteraction_.normalElasticEnergy(),
@@ -723,7 +723,6 @@ private:
         LSParticleInteraction_.contactOverlap(), 
         LSParticleInteraction_.masterID(), 
         LSParticleInteraction_.slaveID(), 
-        LSParticle_.LSBoundaryNode_.localPosition(),
         LSParticle_.LSBoundaryNode_.particleID(), 
         LSParticle_.force(), 
         LSParticle_.torque(), 
@@ -735,7 +734,7 @@ private:
         LSParticle_.shearStiffness(),
         LSParticle_.frictionCoefficient(),
         LSParticle_.restitutionCoefficient(), 
-        halfTimeStep, 
+        timeStep, 
         LSParticleInteraction_.numPair_device(), 
         LSParticleInteraction_.pairGridDim(), 
         LSParticleInteraction_.pairBlockDim(), 
@@ -749,7 +748,6 @@ private:
         LSParticleWallInteraction_.contactOverlap(),
         LSParticleWallInteraction_.masterID(),
         LSParticleWallInteraction_.slaveID(), 
-        LSParticle_.LSBoundaryNode_.localPosition(),
         LSParticle_.LSBoundaryNode_.particleID(), 
         LSParticle_.force(), 
         LSParticle_.torque(), 
@@ -766,7 +764,7 @@ private:
         Wall_.angularVelocity(),
         Wall_.frictionCoefficient(),
         Wall_.restitutionCoefficient(),
-        halfTimeStep, 
+        timeStep, 
         LSParticleWallInteraction_.numPair_device(), 
         LSParticleWallInteraction_.pairGridDim(), 
         LSParticleWallInteraction_.pairBlockDim(), 
@@ -812,13 +810,13 @@ private:
         stream_);
     }
 
-    void addGhostForceTorque(const double halfTimeStep)
+    void addGhostForceTorque(const double timeStep)
     {
-        PeriodicBoundaryXY2D_.addGhostForceTorque(LSParticle_, halfTimeStep, stream_); 
-        PeriodicBoundarySector_.addGhostForceTorque(LSParticle_, halfTimeStep, stream_); 
+        PeriodicBoundaryXY2D_.addGhostForceTorque(LSParticle_, timeStep, stream_); 
+        PeriodicBoundarySector_.addGhostForceTorque(LSParticle_, timeStep, stream_); 
     }
 
-    void integration1stHalf(const double3 gravity, const double halfTimeStep)
+    void integration1stHalf(const double3 gravity, const double timeStep)
     {
         launchParticleVelocityAngularVelocityIntegration(LSParticle_.velocity(),
         LSParticle_.angularVelocity(),
@@ -828,7 +826,7 @@ private:
         LSParticle_.orientation(), 
         LSParticle_.inverseInertiaTensor(), 
         gravity, 
-        halfTimeStep, 
+        0.5 * timeStep, 
         LSParticle_.num_device(), 
         LSParticle_.gridDim(), 
         LSParticle_.blockDim(),
@@ -838,7 +836,7 @@ private:
         LSParticle_.orientation(), 
         LSParticle_.velocity(),
         LSParticle_.angularVelocity(), 
-        2. * halfTimeStep, 
+        timeStep, 
         LSParticle_.num_device(), 
         LSParticle_.gridDim(), 
         LSParticle_.blockDim(),
@@ -848,14 +846,14 @@ private:
         Wall_.orientation(), 
         Wall_.velocity(),
         Wall_.angularVelocity(), 
-        2. * halfTimeStep, 
+        timeStep, 
         Wall_.num_device(), 
         Wall_.gridDim(), 
         Wall_.blockDim(),
         stream_);
     }
 
-    void integration2ndHalf(const double3 gravity, const double halfTimeStep)
+    void integration2ndHalf(const double3 gravity, const double timeStep)
     {
         launchParticleVelocityAngularVelocityIntegration(LSParticle_.velocity(),
         LSParticle_.angularVelocity(),
@@ -865,7 +863,7 @@ private:
         LSParticle_.orientation(), 
         LSParticle_.inverseInertiaTensor(), 
         gravity, 
-        halfTimeStep, 
+        0.5 * timeStep, 
         LSParticle_.num_device(), 
         LSParticle_.gridDim(), 
         LSParticle_.blockDim(),
@@ -878,25 +876,21 @@ private:
         updateLSParticleSpatialGrid();
         buildLSParticleInteraction();
         output(iFrame, iStep, time);
-        const double halfTimeStep = 0.5 * timeStep;
         while (iStep <= numStep)
         {
-            time += halfTimeStep;
-            clearLSParticleForceTorque();
-            addLSParticleContactForceTorque(halfTimeStep);
-            addExternalForceTorque(time);
-            integration1stHalf(gravity, halfTimeStep);
+            integration1stHalf(gravity, timeStep);
 
             updateLSParticleSpatialGrid();
             buildLSParticleInteraction();
 
-            time += halfTimeStep;
             clearLSParticleForceTorque();
-            addLSParticleContactForceTorque(halfTimeStep);
+            addLSParticleContactForceTorque(timeStep);
             addExternalForceTorque(time);
-            integration2ndHalf(gravity, halfTimeStep);
+
+            integration2ndHalf(gravity, timeStep);
 
             iStep += 1;
+            time += timeStep;
             if (iStep % frameInterval == 0)
             {
                 iFrame++;
@@ -914,27 +908,22 @@ private:
         updateLSParticleSpatialGrid();
         buildLSParticleInteraction();
         output(iFrame, iStep, time);
-        const double halfTimeStep = 0.5 * timeStep;
         while (iStep <= numStep)
         {
-            time += halfTimeStep;
-            clearLSParticleForceTorque();
-            addLSParticleContactForceTorque(halfTimeStep);
-            addBondedForceTorque();
-            addExternalForceTorque(time);
-            integration1stHalf(gravity, halfTimeStep);
+            integration1stHalf(gravity, timeStep);
 
             updateLSParticleSpatialGrid();
             buildLSParticleInteraction();
 
-            time += halfTimeStep;
             clearLSParticleForceTorque();
-            addLSParticleContactForceTorque(halfTimeStep);
+            addLSParticleContactForceTorque(timeStep);
             addBondedForceTorque();
             addExternalForceTorque(time);
-            integration2ndHalf(gravity, halfTimeStep);
+
+            integration2ndHalf(gravity, timeStep);
 
             iStep += 1;
+            time += timeStep;
             if (iStep % frameInterval == 0)
             {
                 iFrame++;
@@ -954,29 +943,24 @@ private:
         updateGhostSpatialGrid();
         buildGhostInteraction();
         output(iFrame, iStep, time);
-        const double halfTimeStep = 0.5 * timeStep;
         while (iStep <= numStep)
         {
-            time += halfTimeStep;
-            clearLSParticleForceTorque();
-            addLSParticleContactForceTorque(halfTimeStep);
-            addGhostForceTorque(halfTimeStep);
-            addExternalForceTorque(time);
-            integration1stHalf(gravity, halfTimeStep);
+            integration1stHalf(gravity, timeStep);
 
             updateLSParticleSpatialGrid();
             buildLSParticleInteraction();
             updateGhostSpatialGrid();
             buildGhostInteraction();
 
-            time += halfTimeStep;
             clearLSParticleForceTorque();
-            addLSParticleContactForceTorque(halfTimeStep);
-            addGhostForceTorque(halfTimeStep);
+            addLSParticleContactForceTorque(timeStep);
+            addGhostForceTorque(timeStep);
             addExternalForceTorque(time);
-            integration2ndHalf(gravity, halfTimeStep);
+
+            integration2ndHalf(gravity, timeStep);
 
             iStep += 1;
+            time += timeStep;
             if (iStep % frameInterval == 0)
             {
                 iFrame++;
@@ -996,31 +980,25 @@ private:
         updateGhostSpatialGrid();
         buildGhostInteraction();
         output(iFrame, iStep, time);
-        const double halfTimeStep = 0.5 * timeStep;
         while (iStep <= numStep)
         {
-            time += halfTimeStep;
-            clearLSParticleForceTorque();
-            addLSParticleContactForceTorque(halfTimeStep);
-            addBondedForceTorque();
-            addGhostForceTorque(halfTimeStep);
-            addExternalForceTorque(time);
-            integration1stHalf(gravity, halfTimeStep);
+            integration1stHalf(gravity, timeStep);
 
             updateLSParticleSpatialGrid();
             buildLSParticleInteraction();
             updateGhostSpatialGrid();
             buildGhostInteraction();
-
-            time += halfTimeStep;
+            
             clearLSParticleForceTorque();
-            addLSParticleContactForceTorque(halfTimeStep);
+            addLSParticleContactForceTorque(timeStep);
+            addGhostForceTorque(timeStep);
             addBondedForceTorque();
-            addGhostForceTorque(halfTimeStep);
             addExternalForceTorque(time);
-            integration2ndHalf(gravity, halfTimeStep);
+
+            integration2ndHalf(gravity, timeStep);
 
             iStep += 1;
+            time += timeStep;
             if (iStep % frameInterval == 0)
             {
                 iFrame++;

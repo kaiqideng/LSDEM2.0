@@ -12,20 +12,20 @@
 struct LSGridNode
 {
 private:
-    HostDeviceArray1D<double> levelSetFunctionValue_;
+    HostDeviceArray1D<double> signedDistanceField_;
 
 public:
-    void pushHost(const double levelSetFunctionValue) { levelSetFunctionValue_.pushHost(levelSetFunctionValue); }
+    void pushHost(const double signedDistanceField) { signedDistanceField_.pushHost(signedDistanceField); }
 
-    void copyHostToDevice(cudaStream_t stream) { levelSetFunctionValue_.copyHostToDevice(stream); }
+    void copyHostToDevice(cudaStream_t stream) { signedDistanceField_.copyHostToDevice(stream); }
 
-    const size_t num() const { return levelSetFunctionValue_.hostSize(); }
+    const size_t num() const { return signedDistanceField_.hostSize(); }
 
-    double* levelSetFunctionValue() { return levelSetFunctionValue_.d_ptr; }
+    double* signedDistanceField() { return signedDistanceField_.d_ptr; }
 
-    const std::vector<double>& levelSetFunctionValueHostRef() const { return levelSetFunctionValue_.hostRef(); }
+    const std::vector<double>& signedDistanceFieldHostRef() const { return signedDistanceField_.hostRef(); }
 
-    void setHost(const std::vector<double>& levelSetFunctionValues) { levelSetFunctionValue_.setHost(levelSetFunctionValues); }
+    void setHost(const std::vector<double>& signedDistanceFields) { signedDistanceField_.setHost(signedDistanceFields); }
 };
 
 struct LSBoundaryNode
@@ -80,13 +80,13 @@ public:
     *
     * This function takes a level-set particle representation defined in its LOCAL frame:
     * - boundary nodes (typically phi=0 surface samples) in local coordinates
-    * - a regular background grid with per-node level-set values (LSF)
+    * - a regular background grid with per-node level-set values (Signed Distance Field, SDF)
     * - grid metadata: local origin, node counts, spacing
     *
     * @param[in] boundaryNodeLocalPosition      Boundary node positions in the particle LOCAL frame.
     * @param[in] boundaryNodeConnectivity       Optional: particle faces (triangles).
 
-    * @param[in] gridNodeLevelSetFunctionValue  Flattened LSF values on the particle background grid.
+    * @param[in] gridNodeSignedDistance         Signed distance on the particle background grid.
     *                                           Indexing: ix + nx*(iy + ny*iz).
     * @param[in] gridNodeLocalOrigin            LOCAL coordinate of grid node (0,0,0).
     * @param[in] gridNodeSize                   Grid resolution (nx, ny, nz). Must be >= (2,2,2).
@@ -106,7 +106,7 @@ public:
     void add(const std::vector<double3>& boundaryNodeLocalPosition,
     const std::vector<int3>& boundaryNodeConnectivity,
     
-    const std::vector<double>& gridNodeLevelSetFunctionValue,
+    const std::vector<double>& gridNodeSignedDistance,
     const double3 gridNodeLocalOrigin,
     const int3 gridNodeSize,
     const double gridNodeSpacing,
@@ -141,13 +141,13 @@ public:
         }
 
         const size_t expectedNumGridNodes = size_t(gridNodeSize.x) * size_t(gridNodeSize.y) * size_t(gridNodeSize.z);
-        if (expectedNumGridNodes != gridNodeLevelSetFunctionValue.size())
+        if (expectedNumGridNodes != gridNodeSignedDistance.size())
         {
             std::cerr << "[LSParticle] Inconsistent level-set host data size. "
                     << "Expected "
                     << expectedNumGridNodes
                     << ", got "
-                    << gridNodeLevelSetFunctionValue.size()
+                    << gridNodeSignedDistance.size()
                     << "."
                     << std::endl;
             return;
@@ -171,7 +171,7 @@ public:
             radius = std::max(length(p), radius);
         }
 
-        for (const auto& v : gridNodeLevelSetFunctionValue)
+        for (const auto& v : gridNodeSignedDistance)
         {
             LSGridNode_.pushHost(v);
         }
