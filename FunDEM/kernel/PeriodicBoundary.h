@@ -20,14 +20,11 @@ private:
     SolidInteraction ghostSolidInteraction_;
     
 public:
-    bool initialize(const LSParticle& LS, const size_t maxGPUThread, cudaStream_t stream)
+    void initialize(const LSParticle& LS, const size_t maxGPUThread, cudaStream_t stream)
     {
         const size_t numParticle = LS.num();
-        if (numParticle == 0) return false;
-        const size_t numGrid = LS.spatialGrid_.num_device();
-        if (numGrid == 0) return false;
+        const size_t numGrid = LS.spatialGrid_.num();
         const size_t numBoundaryNode = LS.LSBoundaryNode_.num();
-        if (numBoundaryNode == 0) return false;
 
         ghostVelocity_.allocateDevice(numParticle, stream);
         ghostPosition_.allocateDevice(numParticle, stream);
@@ -39,8 +36,6 @@ public:
         ghostGridHashEndt_.allocateDevice(numGrid, stream);
 
         ghostSolidInteraction_.initialize(numBoundaryNode, maxGPUThread, stream);
-
-        return true;
     }
 
     void updateSpatialGrid(LSParticle& LS, cudaStream_t stream)
@@ -170,85 +165,122 @@ struct PeriodicBoundaryXY2D
     PeriodicBoundaryXY2D& operator=(PeriodicBoundaryXY2D&&) noexcept = default;
 
 public:
-    void turnOn() { ativateFlag_ = true; }
+    void turnXOn() { ativateXFlag_ = true; }
 
-    void turnOff() { ativateFlag_ = false; initializeFlag_ = false; }
+    void turnYOn() { ativateYFlag_ = true; }
 
-    bool isActived() { return ativateFlag_; }
+    void turnXOff() { ativateXFlag_ = false; }
+
+    void turnYOff() { ativateYFlag_ = false; }
+
+    bool isActived()
+    {
+        return (ativateXFlag_ || ativateYFlag_);
+    }
 
     void initialize(const LSParticle& LS, const size_t maxGPUThread, cudaStream_t stream)
     {
-        if (!ativateFlag_) return;
-
-        if (X_.initialize(LS, maxGPUThread, stream) && Y_.initialize(LS, maxGPUThread, stream) &&
-        XY_.initialize(LS, maxGPUThread, stream))
-        {
-            initializeFlag_ = true;
-        }
+        if (ativateXFlag_) X_.initialize(LS, maxGPUThread, stream);
+        if (ativateYFlag_) Y_.initialize(LS, maxGPUThread, stream);
+        if (ativateXFlag_ && ativateYFlag_) XY_.initialize(LS, maxGPUThread, stream);
     }
 
     void updateGhostSpatialGrid(LSParticle& LS, cudaStream_t stream)
     {
-        if (!initializeFlag_) return;
+        if (ativateXFlag_)
+        {
+            launchUpdatePositionOutOfBoundaryXD(LS.position(), 
+            LS.spatialGrid_.minimumBoundary(), 
+            LS.spatialGrid_.maximumBoundary(), 
+            LS.num_device(), 
+            LS.gridDim(), 
+            LS.blockDim(), 
+            stream);
 
-        launchUpdatePositionOutOfBoundary(LS.position(), 
-        LS.spatialGrid_.minimumBoundary(), 
-        LS.spatialGrid_.maximumBoundary(), 
-        LS.num_device(), 
-        LS.gridDim(), 
-        LS.blockDim(), 
-        stream);
+            launchCalculateGhostPositionXD(X_.ghostPosition(), 
+            LS.position(), 
+            LS.spatialGrid_.minimumBoundary(), 
+            LS.spatialGrid_.maximumBoundary(), 
+            LS.spatialGrid_.inverseCellSize(), 
+            LS.spatialGrid_.size3D(), 
+            LS.num_device(), 
+            LS.gridDim(), 
+            LS.blockDim(), 
+            stream);
 
-        launchCalculateXYDirectionGhostPosition(X_.ghostPosition(), 
-        Y_.ghostPosition(),
-        XY_.ghostPosition(), 
-        LS.position(), 
-        LS.spatialGrid_.minimumBoundary(), 
-        LS.spatialGrid_.maximumBoundary(), 
-        LS.spatialGrid_.inverseCellSize(), 
-        LS.spatialGrid_.size3D(), 
-        LS.num_device(), 
-        LS.gridDim(), 
-        LS.blockDim(), 
-        stream);
+            X_.updateSpatialGrid(LS, stream);
 
-        cudaMemcpyAsync(X_.ghostOrientation(), LS.orientation(), LS.num_device() * sizeof(quaternion), cudaMemcpyDeviceToDevice, stream);
-        cudaMemcpyAsync(Y_.ghostOrientation(), LS.orientation(), LS.num_device() * sizeof(quaternion), cudaMemcpyDeviceToDevice, stream);
-        cudaMemcpyAsync(XY_.ghostOrientation(), LS.orientation(), LS.num_device() * sizeof(quaternion), cudaMemcpyDeviceToDevice, stream);
+            cudaMemcpyAsync(X_.ghostOrientation(), LS.orientation(), LS.num_device() * sizeof(quaternion), cudaMemcpyDeviceToDevice, stream);
+            cudaMemcpyAsync(X_.ghostVelocity(), LS.velocity(), LS.num_device() * sizeof(double3), cudaMemcpyDeviceToDevice, stream);
+        }
 
-        X_.updateSpatialGrid(LS, stream);
-        Y_.updateSpatialGrid(LS, stream);
-        XY_.updateSpatialGrid(LS, stream);
+        if (ativateYFlag_)
+        {
+            launchUpdatePositionOutOfBoundaryYD(LS.position(), 
+            LS.spatialGrid_.minimumBoundary(), 
+            LS.spatialGrid_.maximumBoundary(), 
+            LS.num_device(), 
+            LS.gridDim(), 
+            LS.blockDim(), 
+            stream);
+
+            launchCalculateGhostPositionYD(Y_.ghostPosition(), 
+            LS.position(), 
+            LS.spatialGrid_.minimumBoundary(), 
+            LS.spatialGrid_.maximumBoundary(), 
+            LS.spatialGrid_.inverseCellSize(), 
+            LS.spatialGrid_.size3D(), 
+            LS.num_device(), 
+            LS.gridDim(), 
+            LS.blockDim(), 
+            stream);
+
+            Y_.updateSpatialGrid(LS, stream);
+
+            cudaMemcpyAsync(Y_.ghostOrientation(), LS.orientation(), LS.num_device() * sizeof(quaternion), cudaMemcpyDeviceToDevice, stream);
+            cudaMemcpyAsync(Y_.ghostVelocity(), LS.velocity(), LS.num_device() * sizeof(double3), cudaMemcpyDeviceToDevice, stream);
+        }
+
+        if (ativateXFlag_ && ativateYFlag_)
+        {
+            launchCalculateGhostPositionXYD(XY_.ghostPosition(), 
+            LS.position(), 
+            LS.spatialGrid_.minimumBoundary(), 
+            LS.spatialGrid_.maximumBoundary(), 
+            LS.spatialGrid_.inverseCellSize(), 
+            LS.spatialGrid_.size3D(), 
+            LS.num_device(), 
+            LS.gridDim(), 
+            LS.blockDim(), 
+            stream);
+
+            XY_.updateSpatialGrid(LS, stream);
+
+            cudaMemcpyAsync(XY_.ghostOrientation(), LS.orientation(), LS.num_device() * sizeof(quaternion), cudaMemcpyDeviceToDevice, stream);
+            cudaMemcpyAsync(XY_.ghostVelocity(), LS.velocity(), LS.num_device() * sizeof(double3), cudaMemcpyDeviceToDevice, stream);
+        }
     }
 
     void buildGhostInteraction(LSParticle& LS, const size_t maxGPUThread, cudaStream_t stream)
     {
-        if (!initializeFlag_) return;
-
-        X_.buildInteraction(LS, maxGPUThread, stream);
-        Y_.buildInteraction(LS, maxGPUThread, stream);
-        XY_.buildInteraction(LS, maxGPUThread, stream);
+        if (ativateXFlag_) X_.buildInteraction(LS, maxGPUThread, stream);
+        if (ativateYFlag_) Y_.buildInteraction(LS, maxGPUThread, stream);
+        if (ativateXFlag_ && ativateYFlag_) XY_.buildInteraction(LS, maxGPUThread, stream);
     }
 
     void addGhostForceTorque(LSParticle& LS, const double timeStep, cudaStream_t stream)
     {
-        if (!initializeFlag_) return;
-
-        cudaMemcpyAsync(X_.ghostVelocity(), LS.velocity(), LS.num_device() * sizeof(double3), cudaMemcpyDeviceToDevice, stream);
-        cudaMemcpyAsync(Y_.ghostVelocity(), LS.velocity(), LS.num_device() * sizeof(double3), cudaMemcpyDeviceToDevice, stream);
-        cudaMemcpyAsync(XY_.ghostVelocity(), LS.velocity(), LS.num_device() * sizeof(double3), cudaMemcpyDeviceToDevice, stream);
-
-        X_.addForceTorque(LS, timeStep, stream);
-        Y_.addForceTorque(LS, timeStep, stream);
-        XY_.addForceTorque(LS, timeStep, stream);
+        if (ativateXFlag_) X_.addForceTorque(LS, timeStep, stream);
+        if (ativateYFlag_) Y_.addForceTorque(LS, timeStep, stream);
+        if (ativateXFlag_ && ativateYFlag_) XY_.addForceTorque(LS, timeStep, stream);
     }
 
 private:
     Ghost X_;
     Ghost Y_;
     Ghost XY_;
-    bool ativateFlag_{false};
-    bool initializeFlag_{false};
+    bool ativateXFlag_{false};
+    bool ativateYFlag_{false};
 };
 
 struct PeriodicBoundarySector
@@ -265,97 +297,81 @@ struct PeriodicBoundarySector
 public:
     void turnOn() { ativateFlag_ = true; }
 
-    void turnOff() { ativateFlag_ = false; initializeFlag_ = false; }
+    void turnOff() { ativateFlag_ = false; }
 
-    bool isActived() { return ativateFlag_; }
+    bool isActived()
+    {
+        return ativateFlag_;
+    }
 
     void initialize(const LSParticle& LS, const size_t maxGPUThread, cudaStream_t stream)
     {
-        if (!ativateFlag_) return;
-
-        if (R90_.initialize(LS, maxGPUThread, stream) && R180_.initialize(LS, maxGPUThread, stream) &&
-        R270_.initialize(LS, maxGPUThread, stream))
+        if (ativateFlag_)
         {
-            initializeFlag_ = true;
+            R90_.initialize(LS, maxGPUThread, stream);
+            R180_.initialize(LS, maxGPUThread, stream);
+            R270_.initialize(LS, maxGPUThread, stream);
         }
     }
 
     void updateGhostSpatialGrid(LSParticle& LS, cudaStream_t stream)
     {
-        if (!initializeFlag_) return;
+        if (ativateFlag_)
+        {
+            launchUpdateVelocityPositionOrientationOutOfSector(LS.velocity(), 
+            LS.position(), 
+            LS.orientation(), 
+            LS.spatialGrid_.minimumBoundary(),
+            LS.num_device(), 
+            LS.gridDim(), 
+            LS.blockDim(), 
+            stream);
 
-        launchUpdateVelocityPositionOrientationOutOfSector(LS.velocity(), 
-        LS.position(), 
-        LS.orientation(), 
-        LS.spatialGrid_.minimumBoundary(),
-        LS.num_device(), 
-        LS.gridDim(), 
-        LS.blockDim(), 
-        stream);
+            launchCalculateSectorGhostVelocityPositionOrientation(R90_.ghostVelocity(), 
+            R180_.ghostVelocity(), 
+            R270_.ghostVelocity(), 
+            R90_.ghostPosition(), 
+            R180_.ghostPosition(),
+            R270_.ghostPosition(),  
+            R90_.ghostOrientation(), 
+            R180_.ghostOrientation(), 
+            R270_.ghostOrientation(), 
+            LS.velocity(), 
+            LS.position(), 
+            LS.orientation(), 
+            LS.spatialGrid_.minimumBoundary(), 
+            LS.spatialGrid_.maximumBoundary(), 
+            LS.spatialGrid_.inverseCellSize(), 
+            LS.spatialGrid_.size3D(), 
+            LS.num_device(), 
+            LS.gridDim(), 
+            LS.blockDim(), 
+            stream);
 
-        launchCalculateSectorGhostVelocityPositionOrientation(R90_.ghostVelocity(), 
-        R180_.ghostVelocity(), 
-        R270_.ghostVelocity(), 
-        R90_.ghostPosition(), 
-        R180_.ghostPosition(),
-        R270_.ghostPosition(),  
-        R90_.ghostOrientation(), 
-        R180_.ghostOrientation(), 
-        R270_.ghostOrientation(), 
-        LS.velocity(), 
-        LS.position(), 
-        LS.orientation(), 
-        LS.spatialGrid_.minimumBoundary(), 
-        LS.spatialGrid_.maximumBoundary(), 
-        LS.spatialGrid_.inverseCellSize(), 
-        LS.spatialGrid_.size3D(), 
-        LS.num_device(), 
-        LS.gridDim(), 
-        LS.blockDim(), 
-        stream);
-
-        R90_.updateSpatialGrid(LS, stream);
-        R180_.updateSpatialGrid(LS, stream);
-        R270_.updateSpatialGrid(LS, stream);       
+            R90_.updateSpatialGrid(LS, stream);
+            R180_.updateSpatialGrid(LS, stream);
+            R270_.updateSpatialGrid(LS, stream);  
+        }     
     }
 
     void buildGhostInteraction(LSParticle& LS, const size_t maxGPUThread, cudaStream_t stream)
     {
-        if (!initializeFlag_) return;
-
-        R90_.buildInteraction(LS, maxGPUThread, stream);
-        R180_.buildInteraction(LS, maxGPUThread, stream);
-        R270_.buildInteraction(LS, maxGPUThread, stream);
+        if (ativateFlag_)
+        {
+            R90_.buildInteraction(LS, maxGPUThread, stream);
+            R180_.buildInteraction(LS, maxGPUThread, stream);
+            R270_.buildInteraction(LS, maxGPUThread, stream);
+        }
     }
 
     void addGhostForceTorque(LSParticle& LS, const double timeStep, cudaStream_t stream)
     {
-        if (!initializeFlag_) return;
-
-        launchCalculateSectorGhostVelocityPositionOrientation(R90_.ghostVelocity(), 
-        R180_.ghostVelocity(), 
-        R270_.ghostVelocity(), 
-        R90_.ghostPosition(), 
-        R180_.ghostPosition(),
-        R270_.ghostPosition(),  
-        R90_.ghostOrientation(), 
-        R180_.ghostOrientation(), 
-        R270_.ghostOrientation(), 
-        LS.velocity(), 
-        LS.position(), 
-        LS.orientation(), 
-        LS.spatialGrid_.minimumBoundary(), 
-        LS.spatialGrid_.maximumBoundary(), 
-        LS.spatialGrid_.inverseCellSize(), 
-        LS.spatialGrid_.size3D(), 
-        LS.num_device(), 
-        LS.gridDim(), 
-        LS.blockDim(), 
-        stream);
-
-        R90_.addForceTorque(LS, timeStep, stream);
-        R180_.addForceTorque(LS, timeStep, stream);
-        R270_.addForceTorque(LS, timeStep, stream);
+        if (ativateFlag_)
+        {
+            R90_.addForceTorque(LS, timeStep, stream);
+            R180_.addForceTorque(LS, timeStep, stream);
+            R270_.addForceTorque(LS, timeStep, stream);
+        }
     }
 
 private:
@@ -363,6 +379,4 @@ private:
     Ghost R180_;
     Ghost R270_;
     bool ativateFlag_{false};
-    bool initializeFlag_{false};
-    size_t numGhost_{0};
 };

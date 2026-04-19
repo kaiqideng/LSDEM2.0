@@ -160,7 +160,8 @@ int main(const int argc, char** argv)
 
     solver_.moveWall(0, make_double3(0., 0., l));
     solver_.moveWall(1, make_double3(4. * l, 4. * l, 0.));
-    solver_.addPeriodicBoundaryXY2D();
+    solver_.addPeriodicBoundaryXD();
+    solver_.addPeriodicBoundaryYD();
 
     solver_.solve(make_double3(0., 0., -3. * l), 
     make_double3(2. * l, 2. * l, 3. * l), 

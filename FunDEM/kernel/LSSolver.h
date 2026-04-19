@@ -339,15 +339,18 @@ public:
         frictionCoefficient);
     }
 
-    void addPeriodicBoundaryXY2D()
+    void addPeriodicBoundaryXD()
     {
-        PeriodicBoundaryXY2D_.turnOn();
-        PeriodicBoundarySector_.turnOff();
+        PeriodicBoundaryXY2D_.turnXOn();
+    }
+
+    void addPeriodicBoundaryYD()
+    {
+        PeriodicBoundaryXY2D_.turnYOn();
     }
 
     void addPeriodicBoundarySector()
     {
-        PeriodicBoundaryXY2D_.turnOff();
         PeriodicBoundarySector_.turnOn();
     }
 

@@ -48,7 +48,15 @@ const size_t gridD_GPU,
 const size_t blockD_GPU, 
 cudaStream_t stream_GPU);
 
-extern "C" void launchUpdatePositionOutOfBoundary(double3* position,
+extern "C" void launchUpdatePositionOutOfBoundaryXD(double3* position,
+const double3 minBound,
+const double3 maxBound,
+const size_t numObject,
+const size_t gridD,
+const size_t blockD,
+cudaStream_t stream);
+
+extern "C" void launchUpdatePositionOutOfBoundaryYD(double3* position,
 const double3 minBound,
 const double3 maxBound,
 const size_t numObject,
@@ -65,9 +73,35 @@ const size_t gridD,
 const size_t blockD,
 cudaStream_t stream);
 
-extern "C" void launchCalculateXYDirectionGhostPosition(double3* ghostPosition_XD,
-double3* ghostPosition_YD,
-double3* ghostPosition_XYD,
+extern "C" void launchCalculateGhostPositionXD(double3* ghostPosition_XD,
+
+const double3* position,
+
+const double3 minBound,
+const double3 maxBound,
+const double3 inverseCellSize,
+const int3 gridSize3D,
+
+const size_t numObject,
+const size_t gridD,
+const size_t blockD,
+cudaStream_t stream);
+
+extern "C" void launchCalculateGhostPositionYD(double3* ghostPosition_YD,
+
+const double3* position,
+
+const double3 minBound,
+const double3 maxBound,
+const double3 inverseCellSize,
+const int3 gridSize3D,
+
+const size_t numObject,
+const size_t gridD,
+const size_t blockD,
+cudaStream_t stream);
+
+extern "C" void launchCalculateGhostPositionXYD(double3* ghostPosition_XYD,
 
 const double3* position,
 
@@ -136,7 +170,7 @@ private:
     double3 inverseCellSize_ {0.0, 0.0, 0.0};
 
     int3 size3D_ {2, 2, 2};
-    size_t num_ {0};
+    size_t num_ {8};
 
     // ---------------------------------------------------------------------
     // Per-cell arrays
@@ -218,5 +252,6 @@ public:
     const double3& maximumBoundary() const { return maxBoundary_; }
     const double3& inverseCellSize() const { return inverseCellSize_; }
     const int3& size3D() const { return size3D_; }
+    size_t num() const { return num_; }
     size_t num_device() const { return num_; }
 };

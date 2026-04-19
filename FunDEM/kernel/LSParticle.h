@@ -20,6 +20,7 @@ public:
     void copyHostToDevice(cudaStream_t stream) { signedDistanceField_.copyHostToDevice(stream); }
 
     const size_t num() const { return signedDistanceField_.hostSize(); }
+    const size_t num_device() const { return signedDistanceField_.deviceSize(); }
 
     double* signedDistanceField() { return signedDistanceField_.d_ptr; }
 
@@ -49,6 +50,7 @@ public:
     }
 
     const size_t num() const { return localPosition_.hostSize(); }
+    const size_t num_device() const { return localPosition_.deviceSize(); }
 
     double3* localPosition() { return localPosition_.d_ptr; }
     int* particleID() { return particleID_.d_ptr; }

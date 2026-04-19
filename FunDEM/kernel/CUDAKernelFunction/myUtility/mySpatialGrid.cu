@@ -25,7 +25,7 @@ const size_t numObject)
     hashValue[idx] = linearIndex3D(gridPosition, gridSize3D);
 }
 
-__global__ void updatePositionOutOfBoundaryKernel(double3* position, 
+__global__ void updatePositionOutOfBoundaryXDKernel(double3* position, 
 const double3 minBound, 
 const double3 maxBound, 
 const size_t numObject)
@@ -35,9 +35,21 @@ const size_t numObject)
 
     double3 p = position[idx];
     const double3 offset_X = make_double3(maxBound.x - minBound.x, 0., 0.);
-    const double3 offset_Y = make_double3(0., maxBound.y - minBound.y, 0.);
     if (p.x < minBound.x) p += offset_X;
     else if (p.x >= maxBound.x) p -= offset_X;
+    position[idx] = p;
+}
+
+__global__ void updatePositionOutOfBoundaryYDKernel(double3* position, 
+const double3 minBound, 
+const double3 maxBound, 
+const size_t numObject)
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= numObject) return;
+
+    double3 p = position[idx];
+    const double3 offset_Y = make_double3(0., maxBound.y - minBound.y, 0.);
     if (p.y < minBound.y) p += offset_Y;
     else if (p.y >= maxBound.y) p -= offset_Y;
     position[idx] = p;
@@ -72,9 +84,51 @@ const size_t numObject)
     orientation[idx] = q;
 }
 
-__global__ void calculateXYDirectionGhostPositionKernel(double3* ghostPosition_XD, 
-double3* ghostPosition_YD, 
-double3* ghostPosition_XYD, 
+__global__ void calculateGhostPositionXDKernel(double3* ghostPosition_XD, 
+const double3* position, 
+const double3 minBound, 
+const double3 maxBound, 
+const double3 inverseCellSize, 
+const int3 gridSize3D, 
+const size_t numObject)
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= numObject) return;
+
+    const double3 p = position[idx];
+    const double3 offset_X = make_double3(maxBound.x - minBound.x, 0., 0.);
+
+    ghostPosition_XD[idx] = p;
+    const int3 gridPosition = calculateGridPosition(p, minBound, inverseCellSize);
+    if (gridPosition.x == 0) 
+    {
+        ghostPosition_XD[idx] += offset_X;
+    }
+}
+
+__global__ void calculateGhostPositionYDKernel(double3* ghostPosition_YD, 
+const double3* position, 
+const double3 minBound, 
+const double3 maxBound, 
+const double3 inverseCellSize, 
+const int3 gridSize3D, 
+const size_t numObject)
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= numObject) return;
+
+    const double3 p = position[idx];
+    const double3 offset_Y = make_double3(0., maxBound.y - minBound.y, 0.);
+
+    ghostPosition_YD[idx] = p;
+    const int3 gridPosition = calculateGridPosition(p, minBound, inverseCellSize);
+    if (gridPosition.y == 0) 
+    {
+        ghostPosition_YD[idx] += offset_Y;
+    }
+}
+
+__global__ void calculateGhostPositionXYDKernel(double3* ghostPosition_XYD, 
 const double3* position, 
 const double3 minBound, 
 const double3 maxBound, 
@@ -89,22 +143,11 @@ const size_t numObject)
     const double3 offset_X = make_double3(maxBound.x - minBound.x, 0., 0.);
     const double3 offset_Y = make_double3(0., maxBound.y - minBound.y, 0.);
 
-    ghostPosition_XD[idx] = p;
-    ghostPosition_YD[idx] = p;
     ghostPosition_XYD[idx] = p;
     const int3 gridPosition = calculateGridPosition(p, minBound, inverseCellSize);
-    if (gridPosition.x == 0) 
+    if (gridPosition.x == 0 && gridPosition.y == 0) 
     {
-        ghostPosition_XD[idx] += offset_X;
-        if (gridPosition.y == 0) 
-        {
-            ghostPosition_YD[idx] += offset_Y;
-            ghostPosition_XYD[idx] += offset_X + offset_Y;
-        }
-    }
-    else if (gridPosition.y == 0) 
-    {
-        ghostPosition_YD[idx] += offset_Y;
+        ghostPosition_XYD[idx] += offset_X + offset_Y;
     }
 }
 
@@ -233,7 +276,7 @@ cudaStream_t stream_GPU)
     stream_GPU);
 }
 
-extern "C" void launchUpdatePositionOutOfBoundary(double3* position,
+extern "C" void launchUpdatePositionOutOfBoundaryXD(double3* position,
 const double3 minBound,
 const double3 maxBound,
 const size_t numObject,
@@ -241,7 +284,21 @@ const size_t gridD,
 const size_t blockD,
 cudaStream_t stream)
 {
-    updatePositionOutOfBoundaryKernel<<<gridD, blockD, 0, stream>>>(position,
+    updatePositionOutOfBoundaryXDKernel<<<gridD, blockD, 0, stream>>>(position,
+    minBound,
+    maxBound,
+    numObject);
+}
+
+extern "C" void launchUpdatePositionOutOfBoundaryYD(double3* position,
+const double3 minBound,
+const double3 maxBound,
+const size_t numObject,
+const size_t gridD,
+const size_t blockD,
+cudaStream_t stream)
+{
+    updatePositionOutOfBoundaryYDKernel<<<gridD, blockD, 0, stream>>>(position,
     minBound,
     maxBound,
     numObject);
@@ -263,9 +320,7 @@ cudaStream_t stream)
     numObject);
 }
 
-extern "C" void launchCalculateXYDirectionGhostPosition(double3* ghostPosition_XD,
-double3* ghostPosition_YD,
-double3* ghostPosition_XYD,
+extern "C" void launchCalculateGhostPositionXD(double3* ghostPosition_XD,
 
 const double3* position,
 
@@ -279,9 +334,59 @@ const size_t gridD,
 const size_t blockD,
 cudaStream_t stream)
 {
-    calculateXYDirectionGhostPositionKernel<<<gridD, blockD, 0, stream>>>(ghostPosition_XD,
-    ghostPosition_YD,
-    ghostPosition_XYD,
+    calculateGhostPositionXDKernel<<<gridD, blockD, 0, stream>>>(ghostPosition_XD,
+
+    position,
+
+    minBound,
+    maxBound,
+    inverseCellSize,
+    gridSize3D,
+
+    numObject);
+}
+
+extern "C" void launchCalculateGhostPositionYD(double3* ghostPosition_YD,
+
+const double3* position,
+
+const double3 minBound,
+const double3 maxBound,
+const double3 inverseCellSize,
+const int3 gridSize3D,
+
+const size_t numObject,
+const size_t gridD,
+const size_t blockD,
+cudaStream_t stream)
+{
+    calculateGhostPositionYDKernel<<<gridD, blockD, 0, stream>>>(ghostPosition_YD,
+
+    position,
+
+    minBound,
+    maxBound,
+    inverseCellSize,
+    gridSize3D,
+
+    numObject);
+}
+
+extern "C" void launchCalculateGhostPositionXYD(double3* ghostPosition_XYD,
+
+const double3* position,
+
+const double3 minBound,
+const double3 maxBound,
+const double3 inverseCellSize,
+const int3 gridSize3D,
+
+const size_t numObject,
+const size_t gridD,
+const size_t blockD,
+cudaStream_t stream)
+{
+    calculateGhostPositionXYDKernel<<<gridD, blockD, 0, stream>>>(ghostPosition_XYD,
 
     position,
 
