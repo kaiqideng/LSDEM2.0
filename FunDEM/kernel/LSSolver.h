@@ -354,6 +354,13 @@ public:
         PeriodicBoundarySector_.turnOn();
     }
 
+    void removePeriodicBoundary()
+    {
+        PeriodicBoundarySector_.turnOff();
+        PeriodicBoundaryXY2D_.turnXOff();
+        PeriodicBoundaryXY2D_.turnYOff();
+    }
+
     /**
      * @brief Run the solver time integration loop.
      *
