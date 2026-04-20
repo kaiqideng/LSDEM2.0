@@ -2,7 +2,6 @@
 #include "CUDAKernelFunction/myUtility/myHostDeviceArray.h"
 #include "CUDAKernelFunction/myUtility/myQua.h"
 #include "CUDAKernelFunction/myUtility/myFileEdit.h"
-#include "CUDAKernelFunction/myUtility/myVec.h"
 #include <cstdint>
 #include <fstream>
 #include <iomanip>
