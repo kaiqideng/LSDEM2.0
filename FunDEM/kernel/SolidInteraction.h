@@ -77,9 +77,9 @@ public:
 
     void updateNumPair(const size_t maxGPUThread, cudaStream_t stream)
     {
-        cudaStreamSynchronize(stream);
         cudaMemcpyAsync(&numPair_, masterNeighborPrefixSum_.d_ptr + masterNeighborPrefixSum_.deviceSize() - 1, 
         sizeof(int), cudaMemcpyDeviceToHost, stream);
+        cudaStreamSynchronize(stream);
         if (numPair_ > 0)
         {
             pairBlockDim_ = static_cast<size_t>(numPair_);
@@ -96,24 +96,25 @@ public:
 
     void savePreviousStep(cudaStream_t stream)
     {
-        if (static_cast<size_t>(numPair_) > contactPoint_.deviceSize())
+        const size_t arraySize = static_cast<size_t>(numPair_);
+        if (arraySize > contactPoint_.deviceSize())
         {
-            slidingSpring0_.allocateDevice(static_cast<size_t>(numPair_), stream);
-            slaveID0_.allocateDevice(static_cast<size_t>(numPair_), stream);
+            slidingSpring0_.allocateDevice(arraySize, stream);
+            slaveID0_.allocateDevice(arraySize, stream);
 
             cudaMemcpyAsync(slidingSpring0_.d_ptr, slidingSpring_.d_ptr, 
             slidingSpring_.deviceSize() * sizeof(double3), cudaMemcpyDeviceToDevice, stream);
             cudaMemcpyAsync(slaveID0_.d_ptr, slaveID_.d_ptr, 
             slaveID_.deviceSize() * sizeof(int), cudaMemcpyDeviceToDevice, stream);
  
-            contactPoint_.allocateDevice(static_cast<size_t>(numPair_), stream);
-            contactNormal_.allocateDevice(static_cast<size_t>(numPair_), stream);
-            contactOverlap_.allocateDevice(static_cast<size_t>(numPair_), stream);
-            normalElasticEnergy_.allocateDevice(static_cast<size_t>(numPair_), stream);
-            slidingElasticEnergy_.allocateDevice(static_cast<size_t>(numPair_), stream);
-            slidingSpring_.allocateDevice(static_cast<size_t>(numPair_), stream);
-            masterID_.allocateDevice(static_cast<size_t>(numPair_), stream);
-            slaveID_.allocateDevice(static_cast<size_t>(numPair_), stream);
+            contactPoint_.allocateDevice(arraySize, stream);
+            contactNormal_.allocateDevice(arraySize, stream);
+            contactOverlap_.allocateDevice(arraySize, stream);
+            normalElasticEnergy_.allocateDevice(arraySize, stream);
+            slidingElasticEnergy_.allocateDevice(arraySize, stream);
+            slidingSpring_.allocateDevice(arraySize, stream);
+            masterID_.allocateDevice(arraySize, stream);
+            slaveID_.allocateDevice(arraySize, stream);
         }
         else 
         {
