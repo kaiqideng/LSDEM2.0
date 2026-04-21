@@ -157,7 +157,7 @@ public:
 
         if (boundaryNodeConnectivity.size() > 0)
         {
-            const int n = int(LSBoundaryNode_.num());
+            const int n = static_cast<int>(LSBoundaryNode_.num());
             for (const auto& p:boundaryNodeConnectivity) 
             {
                 const int3 p1 = make_int3(p.x + n, p.y + n, p.z + n);
