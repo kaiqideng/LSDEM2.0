@@ -38,6 +38,22 @@ public:
         ghostSolidInteraction_.initialize(numBoundaryNode, maxGPUThread, stream);
     }
 
+    double deviceMemoryGB() const
+    {
+        double total = 0.0;
+
+        total += ghostVelocity_.deviceMemoryGB();
+        total += ghostPosition_.deviceMemoryGB();
+        total += ghostOrientation_.deviceMemoryGB();
+        total += ghostHashValue_.deviceMemoryGB();
+        total += ghostHashIndex_.deviceMemoryGB();
+        total += ghostGridHashStart_.deviceMemoryGB();
+        total += ghostGridHashEndt_.deviceMemoryGB();
+        total += ghostSolidInteraction_.deviceMemoryGB();
+
+        return total;
+    }
+
     void updateSpatialGrid(LSParticle& LS, cudaStream_t stream)
     {
         launchUpdateGhostSpatialGridHashStartEnd(ghostHashIndex_.d_ptr, 
@@ -185,6 +201,17 @@ public:
         if (ativateXFlag_ && ativateYFlag_) XY_.initialize(LS, maxGPUThread, stream);
     }
 
+    double deviceMemoryGB() const
+    {
+        double total = 0.0;
+
+        total += X_.deviceMemoryGB();
+        total += Y_.deviceMemoryGB();
+        total += XY_.deviceMemoryGB();
+
+        return total;
+    }
+
     void updateGhostSpatialGrid(LSParticle& LS, cudaStream_t stream)
     {
         if (ativateXFlag_)
@@ -312,6 +339,17 @@ public:
             R180_.initialize(LS, maxGPUThread, stream);
             R270_.initialize(LS, maxGPUThread, stream);
         }
+    }
+
+    double deviceMemoryGB() const
+    {
+        double total = 0.0;
+
+        total += R90_.deviceMemoryGB();
+        total += R180_.deviceMemoryGB();
+        total += R270_.deviceMemoryGB();
+        
+        return total;
     }
 
     void updateGhostSpatialGrid(LSParticle& LS, cudaStream_t stream)

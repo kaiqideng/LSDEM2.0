@@ -49,6 +49,32 @@ public:
         masterGridDim_ = (numMasterObject + masterBlockDim_ - 1) / masterBlockDim_;
     }
 
+    double deviceMemoryGB() const
+    {
+        double total = 0.0;
+
+        // Contact data
+        total += contactPoint_.deviceMemoryGB();
+        total += contactNormal_.deviceMemoryGB();
+        total += contactOverlap_.deviceMemoryGB();
+        total += normalElasticEnergy_.deviceMemoryGB();
+        total += slidingElasticEnergy_.deviceMemoryGB();
+        total += slidingSpring_.deviceMemoryGB();
+        total += masterID_.deviceMemoryGB();
+        total += slaveID_.deviceMemoryGB();
+
+        // Previous step
+        total += slidingSpring0_.deviceMemoryGB();
+        total += slaveID0_.deviceMemoryGB();
+
+        // Neighbor bookkeeping
+        total += masterNeighborCount_.deviceMemoryGB();
+        total += masterNeighborPrefixSum_.deviceMemoryGB();
+        total += masterNeighborPrefixSum0_.deviceMemoryGB();
+
+        return total;
+    }
+
     void setInteractionArraySize(const size_t arraySize, cudaStream_t stream)
     {
         contactPoint_.allocateDevice(arraySize, stream);
@@ -135,33 +161,23 @@ public:
         size_t N = 0;
         if (numMaster() > 0) N = masterNeighborPrefixSum_.hostRef()[numMaster() - 1];
 
-        const std::vector<double3>& p = contactPoint_.hostRef();
-        const std::vector<double3>& n = contactNormal_.hostRef();
-        const std::vector<double>& nE = normalElasticEnergy_.hostRef();
-        const std::vector<double>& sE = slidingElasticEnergy_.hostRef();
-        const std::vector<double3>& s = slidingSpring_.hostRef();
+        const std::vector<double3>& p  = contactPoint_.hostRef();
+        const std::vector<double3>& n  = contactNormal_.hostRef();
+        const std::vector<double>&  nE = normalElasticEnergy_.hostRef();
+        const std::vector<double>&  sE = slidingElasticEnergy_.hostRef();
+        const std::vector<double3>& s  = slidingSpring_.hostRef();
 
-        std::vector<float> points;
-        std::vector<float> normal;
-        std::vector<float> slidingDirection;
-
-        std::vector<float> normalElasticEnergy;
-        std::vector<float> slidingElasticEnergy;
-
-        std::vector<int32_t> conn;
-        std::vector<int32_t> offs;
-        std::vector<uint8_t> types;
-
-        points.resize(N * 3);
-        normal.resize(N * 3);
-        slidingDirection.resize(N * 3);
-
-        normalElasticEnergy.resize(N);
-        slidingElasticEnergy.resize(N);
-
-        conn.resize(N);
-        offs.resize(N);
-        types.resize(N);
+        // -------------------------------------------------------------------------
+        // Precompute arrays
+        // -------------------------------------------------------------------------
+        std::vector<float>   points(N * 3);
+        std::vector<float>   normal(N * 3);
+        std::vector<float>   slidingDirection(N * 3);
+        std::vector<float>   normalElasticEnergy(N);
+        std::vector<float>   slidingElasticEnergy(N);
+        std::vector<int32_t> conn(N);
+        std::vector<int32_t> offs(N);
+        std::vector<uint8_t> types(N);
 
         for (size_t i = 0; i < N; ++i)
         {
@@ -178,93 +194,126 @@ public:
             slidingDirection[3 * i + 1] = static_cast<float>(s1.y);
             slidingDirection[3 * i + 2] = static_cast<float>(s1.z);
 
-            normalElasticEnergy[i] = static_cast<float>(nE[i]);
+            normalElasticEnergy[i]  = static_cast<float>(nE[i]);
             slidingElasticEnergy[i] = static_cast<float>(sE[i]);
 
-            conn[i] = static_cast<int32_t>(i);
-            offs[i] = static_cast<int32_t>(i + 1);
+            conn[i]  = static_cast<int32_t>(i);
+            offs[i]  = static_cast<int32_t>(i + 1);
             types[i] = static_cast<uint8_t>(1);
         }
 
-        auto pad8 = [](size_t n) -> size_t
+        // -------------------------------------------------------------------------
+        // Open file
+        // -------------------------------------------------------------------------
+        std::ofstream out(fname.str());
+        if (!out)
+            throw std::runtime_error("Cannot open for writing: " + fname.str());
+
+        // -------------------------------------------------------------------------
+        // base64 encoder
+        // -------------------------------------------------------------------------
+        static const char kB64Table[] =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+        auto toB64 = [&](const void* data, size_t nBytes)
         {
-            const size_t a = 8;
-            return (n + (a - 1)) & ~(a - 1);
-        };
+            const uint64_t sz = static_cast<uint64_t>(nBytes);
+            std::vector<uint8_t> buf(sizeof(uint64_t) + nBytes);
+            std::memcpy(buf.data(),                    &sz,  sizeof(uint64_t));
+            std::memcpy(buf.data() + sizeof(uint64_t), data, nBytes);
 
-        auto blockBytes = [&](size_t n) -> size_t
-        {
-            return sizeof(uint64_t) + pad8(n);
-        };
+            const uint8_t* in  = buf.data();
+            const size_t   len = buf.size();
 
-        size_t off_points = 0;
-        size_t off_conn = off_points + blockBytes(points.size() * sizeof(float));
-        size_t off_offs = off_conn + blockBytes(conn.size() * sizeof(int32_t));
-        size_t off_types = off_offs + blockBytes(offs.size() * sizeof(int32_t));
-
-        size_t off_normal = off_types + blockBytes(types.size() * sizeof(uint8_t));
-        size_t off_slidingDirection = off_normal + blockBytes(normal.size() * sizeof(float));
-
-        size_t off_normalElasticEnergy = off_slidingDirection + blockBytes(slidingDirection.size() * sizeof(float));
-        size_t off_slidingElasticEnergy = off_normalElasticEnergy + blockBytes(normalElasticEnergy.size() * sizeof(float));
-
-        std::ofstream out(fname.str(), std::ios::binary);
-        if (!out) throw std::runtime_error("Cannot open " + fname.str());
-
-        out
-            << "<?xml version=\"1.0\"?>\n"
-            << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" byte_order=\"LittleEndian\" header_type=\"UInt64\">\n"
-            << "  <UnstructuredGrid>\n"
-            << "    <FieldData>\n"
-            << "      <DataArray type=\"Float32\" Name=\"TIME\" NumberOfTuples=\"1\" format=\"ascii\"> " << static_cast<float>(time) << " </DataArray>\n"
-            << "      <DataArray type=\"Int32\" Name=\"STEP\" NumberOfTuples=\"1\" format=\"ascii\"> " << static_cast<int32_t>(iStep) << " </DataArray>\n"
-            << "    </FieldData>\n"
-            << "    <Piece NumberOfPoints=\"" << N << "\" NumberOfCells=\"" << N << "\">\n"
-            << "      <Points>\n"
-            << "        <DataArray type=\"Float32\" NumberOfComponents=\"3\" format=\"appended\" offset=\"" << off_points << "\"/>\n"
-            << "      </Points>\n"
-            << "      <Cells>\n"
-            << "        <DataArray type=\"Int32\" Name=\"connectivity\" format=\"appended\" offset=\"" << off_conn << "\"/>\n"
-            << "        <DataArray type=\"Int32\" Name=\"offsets\" format=\"appended\" offset=\"" << off_offs << "\"/>\n"
-            << "        <DataArray type=\"UInt8\" Name=\"types\" format=\"appended\" offset=\"" << off_types << "\"/>\n"
-            << "      </Cells>\n"
-            << "      <PointData>\n"
-            << "        <DataArray type=\"Float32\" Name=\"contactNormal\" NumberOfComponents=\"3\" format=\"appended\" offset=\"" << off_normal << "\"/>\n"
-            << "        <DataArray type=\"Float32\" Name=\"slidingDirection\" NumberOfComponents=\"3\" format=\"appended\" offset=\"" << off_slidingDirection << "\"/>\n"
-            << "        <DataArray type=\"Float32\" Name=\"normalElasticEnergy\" format=\"appended\" offset=\"" << off_normalElasticEnergy << "\"/>\n"
-            << "        <DataArray type=\"Float32\" Name=\"slidingElasticEnergy\" format=\"appended\" offset=\"" << off_slidingElasticEnergy << "\"/>\n"
-            << "      </PointData>\n"
-            << "    </Piece>\n"
-            << "  </UnstructuredGrid>\n"
-            << "  <AppendedData encoding=\"raw\">\n"
-            << "    _";
-
-        auto writeBlock = [&](const void* data, size_t nbytes)
-        {
-            const uint64_t sz = static_cast<uint64_t>(nbytes);
-            out.write(reinterpret_cast<const char*>(&sz), sizeof(uint64_t));
-            if (nbytes) out.write(reinterpret_cast<const char*>(data), static_cast<std::streamsize>(nbytes));
-
-            const size_t pad = pad8(nbytes) - nbytes;
-            if (pad)
+            for (size_t i = 0; i < len; i += 3)
             {
-                static const char zeros[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-                out.write(zeros, static_cast<std::streamsize>(pad));
+                const uint32_t b0 = in[i];
+                const uint32_t b1 = (i + 1 < len) ? in[i + 1] : 0u;
+                const uint32_t b2 = (i + 2 < len) ? in[i + 2] : 0u;
+                const uint32_t v  = (b0 << 16) | (b1 << 8) | b2;
+
+                out.put(kB64Table[(v >> 18) & 0x3F]);
+                out.put(kB64Table[(v >> 12) & 0x3F]);
+                out.put((i + 1 < len) ? kB64Table[(v >> 6) & 0x3F] : '=');
+                out.put((i + 2 < len) ? kB64Table[(v     ) & 0x3F] : '=');
             }
         };
 
-        writeBlock(points.data(), points.size() * sizeof(float));
-        writeBlock(conn.data(), conn.size() * sizeof(int32_t));
-        writeBlock(offs.data(), offs.size() * sizeof(int32_t));
-        writeBlock(types.data(), types.size() * sizeof(uint8_t));
+        // -------------------------------------------------------------------------
+        // XML
+        // -------------------------------------------------------------------------
+        out << "<?xml version=\"1.0\"?>\n"
+            << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" "
+            "byte_order=\"LittleEndian\" header_type=\"UInt64\">\n"
+            << "<UnstructuredGrid>\n";
 
-        writeBlock(normal.data(), normal.size() * sizeof(float));
-        writeBlock(slidingDirection.data(), slidingDirection.size() * sizeof(float));
+        // FieldData
+        out << "<FieldData>\n"
+            << "<DataArray type=\"Float32\" Name=\"TIME\" "
+            "NumberOfTuples=\"1\" format=\"ascii\">"
+            << static_cast<float>(time)
+            << "</DataArray>\n"
+            << "<DataArray type=\"Int32\" Name=\"STEP\" "
+            "NumberOfTuples=\"1\" format=\"ascii\">"
+            << static_cast<int32_t>(iStep)
+            << "</DataArray>\n"
+            << "</FieldData>\n";
 
-        writeBlock(normalElasticEnergy.data(), normalElasticEnergy.size() * sizeof(float));
-        writeBlock(slidingElasticEnergy.data(), slidingElasticEnergy.size() * sizeof(float));
+        out << "<Piece NumberOfPoints=\"" << N
+            << "\" NumberOfCells=\""      << N << "\">\n";
 
-        out << "\n  </AppendedData>\n</VTKFile>\n";
+        // Points
+        out << "<Points>\n"
+            << "<DataArray type=\"Float32\" NumberOfComponents=\"3\" format=\"binary\">\n";
+        toB64(points.data(), points.size() * sizeof(float));
+        out << "\n</DataArray>\n"
+            << "</Points>\n";
+
+        // Cells
+        out << "<Cells>\n";
+
+        out << "<DataArray type=\"Int32\" Name=\"connectivity\" format=\"binary\">\n";
+        toB64(conn.data(), conn.size() * sizeof(int32_t));
+        out << "\n</DataArray>\n";
+
+        out << "<DataArray type=\"Int32\" Name=\"offsets\" format=\"binary\">\n";
+        toB64(offs.data(), offs.size() * sizeof(int32_t));
+        out << "\n</DataArray>\n";
+
+        out << "<DataArray type=\"UInt8\" Name=\"types\" format=\"binary\">\n";
+        toB64(types.data(), types.size() * sizeof(uint8_t));
+        out << "\n</DataArray>\n";
+
+        out << "</Cells>\n";
+
+        // PointData
+        out << "<PointData>\n";
+
+        out << "<DataArray type=\"Float32\" Name=\"contactNormal\" "
+            "NumberOfComponents=\"3\" format=\"binary\">\n";
+        toB64(normal.data(), normal.size() * sizeof(float));
+        out << "\n</DataArray>\n";
+
+        out << "<DataArray type=\"Float32\" Name=\"slidingDirection\" "
+            "NumberOfComponents=\"3\" format=\"binary\">\n";
+        toB64(slidingDirection.data(), slidingDirection.size() * sizeof(float));
+        out << "\n</DataArray>\n";
+
+        out << "<DataArray type=\"Float32\" Name=\"normalElasticEnergy\" format=\"binary\">\n";
+        toB64(normalElasticEnergy.data(), normalElasticEnergy.size() * sizeof(float));
+        out << "\n</DataArray>\n";
+
+        out << "<DataArray type=\"Float32\" Name=\"slidingElasticEnergy\" format=\"binary\">\n";
+        toB64(slidingElasticEnergy.data(), slidingElasticEnergy.size() * sizeof(float));
+        out << "\n</DataArray>\n";
+
+        out << "</PointData>\n"
+            << "</Piece>\n"
+            << "</UnstructuredGrid>\n"
+            << "</VTKFile>\n";
+
+        if (!out)
+            throw std::runtime_error("Write error on: " + fname.str());
     }
 
     void finalize(cudaStream_t stream)

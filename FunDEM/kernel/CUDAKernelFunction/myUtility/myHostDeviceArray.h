@@ -148,6 +148,10 @@ public:
     // ---------------------------------------------------------------------
     size_t hostSize() const { return h_data.size(); }
     size_t deviceSize() const { return d_size; }
+    double deviceMemoryGB() const
+    {
+        return static_cast<double>(d_size) * sizeof(T) / (1024.0 * 1024.0 * 1024.0);
+    }
 
 public:
     // ---------------------------------------------------------------------

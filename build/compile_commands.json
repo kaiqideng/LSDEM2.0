@@ -1,62 +1,62 @@
 [
 {
-  "directory": "/teamspace/studios/this_studio/build",
-  "command": "/usr/local/cuda/bin/nvcc -forward-unknown-to-host-compiler -I/teamspace/studios/this_studio/FunDEM -I/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction -I/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction/myUtility -I/teamspace/studios/this_studio/FunDEM/kernel -isystem /usr/local/cuda/targets/x86_64-linux/include -O3 -DNDEBUG -std=c++17 \"--generate-code=arch=compute_75,code=[compute_75,sm_75]\" -Xcompiler=-fPIC -x cu -rdc=true -c /teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction/LSParticleContactDetectionKernel.cu -o kernel/CUDAKernelFunction/CMakeFiles/FunDEM_kernels.dir/LSParticleContactDetectionKernel.cu.o",
-  "file": "/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction/LSParticleContactDetectionKernel.cu",
+  "directory": "/home/kaiqideng/LSDEM2.0/build",
+  "command": "/usr/bin/nvcc -forward-unknown-to-host-compiler -I/home/kaiqideng/LSDEM2.0/FunDEM -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction/myUtility -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel -O3 -DNDEBUG -std=c++17 \"--generate-code=arch=compute_89,code=[compute_89,sm_89]\" -Xcompiler=-fPIC -x cu -rdc=true -c /home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction/LSParticleContactDetectionKernel.cu -o kernel/CUDAKernelFunction/CMakeFiles/FunDEM_kernels.dir/LSParticleContactDetectionKernel.cu.o",
+  "file": "/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction/LSParticleContactDetectionKernel.cu",
   "output": "kernel/CUDAKernelFunction/CMakeFiles/FunDEM_kernels.dir/LSParticleContactDetectionKernel.cu.o"
 },
 {
-  "directory": "/teamspace/studios/this_studio/build",
-  "command": "/usr/local/cuda/bin/nvcc -forward-unknown-to-host-compiler -I/teamspace/studios/this_studio/FunDEM -I/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction -I/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction/myUtility -I/teamspace/studios/this_studio/FunDEM/kernel -isystem /usr/local/cuda/targets/x86_64-linux/include -O3 -DNDEBUG -std=c++17 \"--generate-code=arch=compute_75,code=[compute_75,sm_75]\" -Xcompiler=-fPIC -x cu -rdc=true -c /teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction/contactKernel.cu -o kernel/CUDAKernelFunction/CMakeFiles/FunDEM_kernels.dir/contactKernel.cu.o",
-  "file": "/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction/contactKernel.cu",
+  "directory": "/home/kaiqideng/LSDEM2.0/build",
+  "command": "/usr/bin/nvcc -forward-unknown-to-host-compiler -I/home/kaiqideng/LSDEM2.0/FunDEM -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction/myUtility -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel -O3 -DNDEBUG -std=c++17 \"--generate-code=arch=compute_89,code=[compute_89,sm_89]\" -Xcompiler=-fPIC -x cu -rdc=true -c /home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction/contactKernel.cu -o kernel/CUDAKernelFunction/CMakeFiles/FunDEM_kernels.dir/contactKernel.cu.o",
+  "file": "/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction/contactKernel.cu",
   "output": "kernel/CUDAKernelFunction/CMakeFiles/FunDEM_kernels.dir/contactKernel.cu.o"
 },
 {
-  "directory": "/teamspace/studios/this_studio/build",
-  "command": "/usr/local/cuda/bin/nvcc -forward-unknown-to-host-compiler -I/teamspace/studios/this_studio/FunDEM -I/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction -I/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction/myUtility -I/teamspace/studios/this_studio/FunDEM/kernel -isystem /usr/local/cuda/targets/x86_64-linux/include -O3 -DNDEBUG -std=c++17 \"--generate-code=arch=compute_75,code=[compute_75,sm_75]\" -Xcompiler=-fPIC -x cu -rdc=true -c /teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction/myUtility/buildHashStartEnd.cu -o kernel/CUDAKernelFunction/CMakeFiles/FunDEM_kernels.dir/myUtility/buildHashStartEnd.cu.o",
-  "file": "/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction/myUtility/buildHashStartEnd.cu",
+  "directory": "/home/kaiqideng/LSDEM2.0/build",
+  "command": "/usr/bin/nvcc -forward-unknown-to-host-compiler -I/home/kaiqideng/LSDEM2.0/FunDEM -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction/myUtility -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel -O3 -DNDEBUG -std=c++17 \"--generate-code=arch=compute_89,code=[compute_89,sm_89]\" -Xcompiler=-fPIC -x cu -rdc=true -c /home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction/myUtility/buildHashStartEnd.cu -o kernel/CUDAKernelFunction/CMakeFiles/FunDEM_kernels.dir/myUtility/buildHashStartEnd.cu.o",
+  "file": "/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction/myUtility/buildHashStartEnd.cu",
   "output": "kernel/CUDAKernelFunction/CMakeFiles/FunDEM_kernels.dir/myUtility/buildHashStartEnd.cu.o"
 },
 {
-  "directory": "/teamspace/studios/this_studio/build",
-  "command": "/usr/local/cuda/bin/nvcc -forward-unknown-to-host-compiler -I/teamspace/studios/this_studio/FunDEM -I/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction -I/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction/myUtility -I/teamspace/studios/this_studio/FunDEM/kernel -isystem /usr/local/cuda/targets/x86_64-linux/include -O3 -DNDEBUG -std=c++17 \"--generate-code=arch=compute_75,code=[compute_75,sm_75]\" -Xcompiler=-fPIC -x cu -rdc=true -c /teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction/myUtility/mySpatialGrid.cu -o kernel/CUDAKernelFunction/CMakeFiles/FunDEM_kernels.dir/myUtility/mySpatialGrid.cu.o",
-  "file": "/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction/myUtility/mySpatialGrid.cu",
+  "directory": "/home/kaiqideng/LSDEM2.0/build",
+  "command": "/usr/bin/nvcc -forward-unknown-to-host-compiler -I/home/kaiqideng/LSDEM2.0/FunDEM -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction/myUtility -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel -O3 -DNDEBUG -std=c++17 \"--generate-code=arch=compute_89,code=[compute_89,sm_89]\" -Xcompiler=-fPIC -x cu -rdc=true -c /home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction/myUtility/mySpatialGrid.cu -o kernel/CUDAKernelFunction/CMakeFiles/FunDEM_kernels.dir/myUtility/mySpatialGrid.cu.o",
+  "file": "/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction/myUtility/mySpatialGrid.cu",
   "output": "kernel/CUDAKernelFunction/CMakeFiles/FunDEM_kernels.dir/myUtility/mySpatialGrid.cu.o"
 },
 {
-  "directory": "/teamspace/studios/this_studio/build",
-  "command": "/usr/local/cuda/bin/nvcc -forward-unknown-to-host-compiler -I/teamspace/studios/this_studio/FunDEM -I/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction -I/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction/myUtility -I/teamspace/studios/this_studio/FunDEM/kernel -isystem /usr/local/cuda/targets/x86_64-linux/include -O3 -DNDEBUG -std=c++17 \"--generate-code=arch=compute_75,code=[compute_75,sm_75]\" -Xcompiler=-fPIC -x cu -rdc=true -c /teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction/particleIntegrationKernel.cu -o kernel/CUDAKernelFunction/CMakeFiles/FunDEM_kernels.dir/particleIntegrationKernel.cu.o",
-  "file": "/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction/particleIntegrationKernel.cu",
+  "directory": "/home/kaiqideng/LSDEM2.0/build",
+  "command": "/usr/bin/nvcc -forward-unknown-to-host-compiler -I/home/kaiqideng/LSDEM2.0/FunDEM -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction/myUtility -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel -O3 -DNDEBUG -std=c++17 \"--generate-code=arch=compute_89,code=[compute_89,sm_89]\" -Xcompiler=-fPIC -x cu -rdc=true -c /home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction/particleIntegrationKernel.cu -o kernel/CUDAKernelFunction/CMakeFiles/FunDEM_kernels.dir/particleIntegrationKernel.cu.o",
+  "file": "/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction/particleIntegrationKernel.cu",
   "output": "kernel/CUDAKernelFunction/CMakeFiles/FunDEM_kernels.dir/particleIntegrationKernel.cu.o"
 },
 {
-  "directory": "/teamspace/studios/this_studio/build",
-  "command": "/usr/local/cuda/bin/nvcc -forward-unknown-to-host-compiler -I/teamspace/studios/this_studio/FunDEM/apps -I/teamspace/studios/this_studio/FunDEM -I/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction -I/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction/myUtility -I/teamspace/studios/this_studio/FunDEM/kernel -isystem /usr/local/cuda/targets/x86_64-linux/include -O3 -DNDEBUG -std=c++17 \"--generate-code=arch=compute_75,code=[compute_75,sm_75]\" -Xcompiler=-fPIC -x cu -rdc=true -c /teamspace/studios/this_studio/FunDEM/apps/tutorial/globalDamping.cu -o apps/CMakeFiles/FunDEM_apps_common.dir/tutorial/globalDamping.cu.o",
-  "file": "/teamspace/studios/this_studio/FunDEM/apps/tutorial/globalDamping.cu",
+  "directory": "/home/kaiqideng/LSDEM2.0/build",
+  "command": "/usr/bin/nvcc -forward-unknown-to-host-compiler -I/home/kaiqideng/LSDEM2.0/FunDEM/apps -I/home/kaiqideng/LSDEM2.0/FunDEM -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction/myUtility -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel -O3 -DNDEBUG -std=c++17 \"--generate-code=arch=compute_89,code=[compute_89,sm_89]\" -Xcompiler=-fPIC -x cu -rdc=true -c /home/kaiqideng/LSDEM2.0/FunDEM/apps/tutorial/globalDamping.cu -o apps/CMakeFiles/FunDEM_apps_common.dir/tutorial/globalDamping.cu.o",
+  "file": "/home/kaiqideng/LSDEM2.0/FunDEM/apps/tutorial/globalDamping.cu",
   "output": "apps/CMakeFiles/FunDEM_apps_common.dir/tutorial/globalDamping.cu.o"
 },
 {
-  "directory": "/teamspace/studios/this_studio/build",
-  "command": "/usr/bin/c++ -I/teamspace/studios/this_studio/FunDEM/apps -I/teamspace/studios/this_studio/FunDEM -I/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction -I/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction/myUtility -I/teamspace/studios/this_studio/FunDEM/kernel -isystem /usr/local/cuda/targets/x86_64-linux/include -O3 -DNDEBUG -std=gnu++17 -fPIE -o apps/CMakeFiles/tutorial__tutorial1-LSParticleFalling.dir/tutorial/tutorial1-LSParticleFalling.cpp.o -c /teamspace/studios/this_studio/FunDEM/apps/tutorial/tutorial1-LSParticleFalling.cpp",
-  "file": "/teamspace/studios/this_studio/FunDEM/apps/tutorial/tutorial1-LSParticleFalling.cpp",
+  "directory": "/home/kaiqideng/LSDEM2.0/build",
+  "command": "/usr/bin/c++ -I/home/kaiqideng/LSDEM2.0/FunDEM/apps -I/home/kaiqideng/LSDEM2.0/FunDEM -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction/myUtility -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel -O3 -DNDEBUG -std=gnu++17 -fPIE -o apps/CMakeFiles/tutorial__tutorial1-LSParticleFalling.dir/tutorial/tutorial1-LSParticleFalling.cpp.o -c /home/kaiqideng/LSDEM2.0/FunDEM/apps/tutorial/tutorial1-LSParticleFalling.cpp",
+  "file": "/home/kaiqideng/LSDEM2.0/FunDEM/apps/tutorial/tutorial1-LSParticleFalling.cpp",
   "output": "apps/CMakeFiles/tutorial__tutorial1-LSParticleFalling.dir/tutorial/tutorial1-LSParticleFalling.cpp.o"
 },
 {
-  "directory": "/teamspace/studios/this_studio/build",
-  "command": "/usr/bin/c++ -I/teamspace/studios/this_studio/FunDEM/apps -I/teamspace/studios/this_studio/FunDEM -I/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction -I/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction/myUtility -I/teamspace/studios/this_studio/FunDEM/kernel -isystem /usr/local/cuda/targets/x86_64-linux/include -O3 -DNDEBUG -std=gnu++17 -fPIE -o apps/CMakeFiles/tutorial__tutorial2-LSParticleRolling.dir/tutorial/tutorial2-LSParticleRolling.cpp.o -c /teamspace/studios/this_studio/FunDEM/apps/tutorial/tutorial2-LSParticleRolling.cpp",
-  "file": "/teamspace/studios/this_studio/FunDEM/apps/tutorial/tutorial2-LSParticleRolling.cpp",
+  "directory": "/home/kaiqideng/LSDEM2.0/build",
+  "command": "/usr/bin/c++ -I/home/kaiqideng/LSDEM2.0/FunDEM/apps -I/home/kaiqideng/LSDEM2.0/FunDEM -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction/myUtility -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel -O3 -DNDEBUG -std=gnu++17 -fPIE -o apps/CMakeFiles/tutorial__tutorial2-LSParticleRolling.dir/tutorial/tutorial2-LSParticleRolling.cpp.o -c /home/kaiqideng/LSDEM2.0/FunDEM/apps/tutorial/tutorial2-LSParticleRolling.cpp",
+  "file": "/home/kaiqideng/LSDEM2.0/FunDEM/apps/tutorial/tutorial2-LSParticleRolling.cpp",
   "output": "apps/CMakeFiles/tutorial__tutorial2-LSParticleRolling.dir/tutorial/tutorial2-LSParticleRolling.cpp.o"
 },
 {
-  "directory": "/teamspace/studios/this_studio/build",
-  "command": "/usr/bin/c++ -I/teamspace/studios/this_studio/FunDEM/apps -I/teamspace/studios/this_studio/FunDEM -I/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction -I/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction/myUtility -I/teamspace/studios/this_studio/FunDEM/kernel -isystem /usr/local/cuda/targets/x86_64-linux/include -O3 -DNDEBUG -std=gnu++17 -fPIE -o apps/CMakeFiles/tutorial__tutorial3-bondedLSParticleBeam.dir/tutorial/tutorial3-bondedLSParticleBeam.cpp.o -c /teamspace/studios/this_studio/FunDEM/apps/tutorial/tutorial3-bondedLSParticleBeam.cpp",
-  "file": "/teamspace/studios/this_studio/FunDEM/apps/tutorial/tutorial3-bondedLSParticleBeam.cpp",
+  "directory": "/home/kaiqideng/LSDEM2.0/build",
+  "command": "/usr/bin/c++ -I/home/kaiqideng/LSDEM2.0/FunDEM/apps -I/home/kaiqideng/LSDEM2.0/FunDEM -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction/myUtility -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel -O3 -DNDEBUG -std=gnu++17 -fPIE -o apps/CMakeFiles/tutorial__tutorial3-bondedLSParticleBeam.dir/tutorial/tutorial3-bondedLSParticleBeam.cpp.o -c /home/kaiqideng/LSDEM2.0/FunDEM/apps/tutorial/tutorial3-bondedLSParticleBeam.cpp",
+  "file": "/home/kaiqideng/LSDEM2.0/FunDEM/apps/tutorial/tutorial3-bondedLSParticleBeam.cpp",
   "output": "apps/CMakeFiles/tutorial__tutorial3-bondedLSParticleBeam.dir/tutorial/tutorial3-bondedLSParticleBeam.cpp.o"
 },
 {
-  "directory": "/teamspace/studios/this_studio/build",
-  "command": "/usr/bin/c++ -I/teamspace/studios/this_studio/FunDEM/apps -I/teamspace/studios/this_studio/FunDEM -I/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction -I/teamspace/studios/this_studio/FunDEM/kernel/CUDAKernelFunction/myUtility -I/teamspace/studios/this_studio/FunDEM/kernel -isystem /usr/local/cuda/targets/x86_64-linux/include -O3 -DNDEBUG -std=gnu++17 -fPIE -o apps/CMakeFiles/tutorial__tutorial4-PeriodicBoundary.dir/tutorial/tutorial4-PeriodicBoundary.cpp.o -c /teamspace/studios/this_studio/FunDEM/apps/tutorial/tutorial4-PeriodicBoundary.cpp",
-  "file": "/teamspace/studios/this_studio/FunDEM/apps/tutorial/tutorial4-PeriodicBoundary.cpp",
+  "directory": "/home/kaiqideng/LSDEM2.0/build",
+  "command": "/usr/bin/c++ -I/home/kaiqideng/LSDEM2.0/FunDEM/apps -I/home/kaiqideng/LSDEM2.0/FunDEM -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction/myUtility -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel -O3 -DNDEBUG -std=gnu++17 -fPIE -o apps/CMakeFiles/tutorial__tutorial4-PeriodicBoundary.dir/tutorial/tutorial4-PeriodicBoundary.cpp.o -c /home/kaiqideng/LSDEM2.0/FunDEM/apps/tutorial/tutorial4-PeriodicBoundary.cpp",
+  "file": "/home/kaiqideng/LSDEM2.0/FunDEM/apps/tutorial/tutorial4-PeriodicBoundary.cpp",
   "output": "apps/CMakeFiles/tutorial__tutorial4-PeriodicBoundary.dir/tutorial/tutorial4-PeriodicBoundary.cpp.o"
 }
 ]

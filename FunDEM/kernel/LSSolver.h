@@ -23,35 +23,31 @@ public:
     ~LSSolver() = default;
 
     /**
-     * @brief Add one free level-set particle.
-     *
-     * @param boundaryNodeLocalPosition Local boundary node positions of the particle.
-     * @param gridNodeSignedDistance Signed distance stored on the background grid nodes.
-     * @param gridNodeLocalOrigin Local origin of the level-set grid.
-     * @param gridNodeSize Grid resolution in x-, y-, and z-directions.
-     * @param gridNodeSpacing Uniform grid spacing of the level-set grid.
-     * @param position Initial world position of the particle.
-     * @param velocity Initial translational velocity of the particle.
-     * @param angularVelocity Initial angular velocity of the particle.
-     * @param orientation Initial particle orientation.
-     * @param normalStiffness Normal contact stiffness.
-     * @param shearStiffness Shear contact stiffness.
-     * @param frictionCoefficient Friction coefficient.
-     * @param restitutionCoefficient Restitution coefficient.
-     * @param density Particle density.
-     * @param boundaryNodeConnectivity Optional boundary mesh connectivity.
-     * Notes / assumptions:
-     * It computes basic rigid-body properties from the grid:
-     * - mass via a smoothed Heaviside integration of the level-set field
-     * - center of mass (centroidLocalPosition) from the same Heaviside weights
-     * - inertia tensor around the center of mass, then inverse inertia.
-     *
-     * Here the Heaviside assumes "inside is negative" (phi < 0 means inside),
-     * because smoothHeaviside(phi/gridNodeSpacing, ...) returns ~1 for negative phi.
-     * If your convention is opposite, you must flip the sign passed into smoothHeaviside.
-     * This function modifies host arrays. If previous data has been uploaded (upload_==true),
-     * it first downloads device -> host to keep host-side buffers consistent.
-     */
+    * @brief Add one free level-set particle with mass and inertia computed from the SDF.
+    *
+    * Mass and inertia tensor are integrated from the level-set grid using a
+    * smoothed Heaviside function. The particle frame is shifted so that its
+    * origin coincides with the computed center of mass.
+    *
+    * @param boundaryNodeLocalPosition  Boundary node positions in the particle LOCAL frame.
+    * @param gridNodeSignedDistance     Signed distance values on the background grid.
+    *                                   Indexing: ix + nx*(iy + ny*iz).
+    *                                   Convention: phi < 0 inside, phi > 0 outside.
+    * @param gridNodeLocalOrigin        LOCAL coordinate of grid node (0,0,0).
+    * @param gridNodeSize               Grid resolution (nx, ny, nz). Must be >= (2,2,2).
+    * @param gridNodeSpacing            Uniform grid spacing (must be > 0).
+    * @param position                   Initial particle position in WORLD frame.
+    *                                   Will be shifted by the rotated center-of-mass offset.
+    * @param velocity                   Initial translational velocity in WORLD frame.
+    * @param angularVelocity            Initial angular velocity in WORLD frame.
+    * @param orientation                Initial orientation (LOCAL -> WORLD).
+    * @param normalStiffness            Normal contact stiffness (must be >= 0).
+    * @param shearStiffness             Shear contact stiffness (must be >= 0).
+    * @param frictionCoefficient        Friction coefficient (must be >= 0).
+    * @param restitutionCoefficient     Restitution coefficient (clamped to (0, 1]).
+    * @param density                    Particle density (must be > 0).
+    * @param boundaryNodeConnectivity   Optional triangle connectivity of the boundary mesh.
+    */
     void addLSParticle(const std::vector<double3>& boundaryNodeLocalPosition,
     const std::vector<double>& gridNodeSignedDistance,
     const double3 gridNodeLocalOrigin,
@@ -69,7 +65,7 @@ public:
     const std::vector<int3>& boundaryNodeConnectivity = {})
     {
         double mass = 0.;
-        auto smoothHeaviside = [&](const double phi_dimensionless, const double smoothParameter) -> double
+        auto smoothHeaviside = [](const double phi_dimensionless, const double smoothParameter) -> double
         {
             if (smoothParameter <= 0.0) return (phi_dimensionless > 0.0) ? 0.0 : 1.0;
 
@@ -141,6 +137,7 @@ public:
         const quaternion orientation_new = normalize(orientation);
         const double3 position_new = position + rotateVectorByQuaternion(orientation_new, centroidLocalPosition);
         std::vector<double3> boundaryNodeLocalPosition_new;
+        boundaryNodeLocalPosition_new.reserve(boundaryNodeLocalPosition.size());
         for (const auto& p : boundaryNodeLocalPosition)
         {
             boundaryNodeLocalPosition_new.push_back(p - centroidLocalPosition);
@@ -165,6 +162,31 @@ public:
         restitutionCoefficient);
     }
 
+    /**
+    * @brief Add one free level-set particle with explicitly provided mass and inertia tensor.
+    *
+    * Use this overload when mass and inertia are known analytically or from
+    * an external source, bypassing the SDF-based integration.
+    *
+    * @param boundaryNodeLocalPosition  Boundary node positions in the particle LOCAL frame.
+    * @param gridNodeSignedDistance     Signed distance values on the background grid.
+    *                                   Indexing: ix + nx*(iy + ny*iz).
+    * @param gridNodeLocalOrigin        LOCAL coordinate of grid node (0,0,0).
+    * @param gridNodeSize               Grid resolution (nx, ny, nz). Must be >= (2,2,2).
+    * @param gridNodeSpacing            Uniform grid spacing (must be > 0).
+    * @param position                   Initial particle position in WORLD frame.
+    * @param velocity                   Initial translational velocity in WORLD frame.
+    * @param angularVelocity            Initial angular velocity in WORLD frame.
+    * @param orientation                Initial orientation (LOCAL -> WORLD).
+    * @param mass                       Particle mass. If <= 0, treated as immovable (inverseMass = 0).
+    * @param inertiaTensor              Inertia tensor in LOCAL frame.
+    *                                   If mass <= 0, treated as immovable (inverseInertia = 0).
+    * @param normalStiffness            Normal contact stiffness (must be >= 0).
+    * @param shearStiffness             Shear contact stiffness (must be >= 0).
+    * @param frictionCoefficient        Friction coefficient (must be >= 0).
+    * @param restitutionCoefficient     Restitution coefficient (clamped to (0, 1]).
+    * @param boundaryNodeConnectivity   Optional triangle connectivity of the boundary mesh.
+    */
     void addLSParticle(const std::vector<double3>& boundaryNodeLocalPosition,
     const std::vector<double>& gridNodeSignedDistance,
     const double3 gridNodeLocalOrigin,
@@ -201,19 +223,25 @@ public:
     }
 
     /**
-     * @brief Add one wall object represented by a level-set particle.
-     *
-     * @param objVertexLocalPosition Local mesh vertex positions of the wall object.
-     * @param objTriangleVertexID Triangle connectivity of the wall mesh.
-     * @param gridNodeSignedDistance Signed distance stored on the background grid nodes.
-     * @param gridNodeLocalOrigin Local origin of the level-set grid.
-     * @param gridNodeSize Grid resolution in x-, y-, and z-directions.
-     * @param gridNodeSpacing Uniform grid spacing of the level-set grid.
-     * @param position Initial world position of the wall object.
-     * @param orientation Initial wall orientation.
-     * @param frictionCoefficient Friction coefficient.
-     * @param restitutionCoefficient Restitution coefficient.
-     */
+    * @brief Add one static wall object represented as a level-set particle.
+    *
+    * The wall is treated as a fixed (immovable) rigid body: inverse mass and
+    * inverse inertia are both set to zero. Velocity and angular velocity are
+    * initialized to zero unless set later via setFixedVelocityToWall() or
+    * setFixedAngularVelocityToWall().
+    *
+    * @param objVertexLocalPosition   Mesh vertex positions in the wall LOCAL frame.
+    * @param objTriangleVertexID      Triangle connectivity of the wall mesh.
+    * @param gridNodeSignedDistance   Signed distance values on the background grid.
+    *                                 Indexing: ix + nx*(iy + ny*iz).
+    * @param gridNodeLocalOrigin      LOCAL coordinate of grid node (0,0,0).
+    * @param gridNodeSize             Grid resolution (nx, ny, nz). Must be >= (2,2,2).
+    * @param gridNodeSpacing          Uniform grid spacing (must be > 0).
+    * @param position                 Initial wall position in WORLD frame.
+    * @param orientation              Initial wall orientation (LOCAL -> WORLD).
+    * @param frictionCoefficient      Friction coefficient (must be >= 0).
+    * @param restitutionCoefficient   Restitution coefficient (clamped to (0, 1]). Default = 1.
+    */
     void addWall(const std::vector<double3>& objVertexLocalPosition,
     const std::vector<int3>& objTriangleVertexID, 
     const std::vector<double>& gridNodeSignedDistance,
@@ -243,27 +271,107 @@ public:
         restitutionCoefficient);
     }
 
+    /**
+    * @brief Translate a level-set particle by a given offset.
+    *
+    * @param index  Particle index.
+    * @param offset Translation vector in WORLD frame.
+    */
     void moveLSParticle(const size_t index, const double3 offSet) 
     { 
         LSParticle_.move(index, offSet); 
     }
 
-    void moveWall(const size_t index, const double3 offSet) 
-    { 
-        Wall_.move(index, offSet); 
+    /**
+    * @brief Translate a wall object by a given offset.
+    *
+    * @param index  Wall index.
+    * @param offset Translation vector in WORLD frame.
+    */
+    void moveWall(const size_t index, const double3 offset)
+    {
+        Wall_.move(index, offset);
     }
 
+    /**
+    * @brief Assign a fixed translational velocity to a wall object.
+    *
+    * The wall moves at this constant velocity each time step.
+    *
+    * @param index    Wall index.
+    * @param velocity Translational velocity in WORLD frame.
+    */
     void setFixedVelocityToWall(const size_t index, const double3 velocity)
     {
         Wall_.setVelocity(index, velocity);
     }
 
+    /**
+    * @brief Assign a fixed angular velocity to a wall object.
+    *
+    * The wall rotates at this constant angular velocity each time step.
+    *
+    * @param index           Wall index.
+    * @param angularVelocity Angular velocity in WORLD frame.
+    */
     void setFixedAngularVelocityToWall(const size_t index, const double3 angularVelocity)
     {
         Wall_.setAngularVelocity(index, angularVelocity);
     }
 
     /**
+    * @brief Add a single bonded interaction between two level-set particles.
+    *
+    * Creates a virtual parallel bond between the specified master and slave
+    * particles at the given bond point and orientation. The bond stiffness
+    * coefficients are derived from beam theory using the provided geometry
+    * and material parameters.
+    *
+    * @param masterObjectID      Index of the master particle.
+    * @param slaveObjectID       Index of the slave particle.
+    * @param bondPoint           Bond center point in WORLD frame.
+    * @param bondNormal          Bond axis direction in WORLD frame (need not be normalized).
+    * @param radius              Bond cross-section radius (must be > 0).
+    * @param initialLength       Bond initial length (must be > 0).
+    * @param YoungsModulus       Bond Young's modulus (must be > 0).
+    * @param poissonRatio        Bond Poisson ratio (must be in (-1, 0.5)).
+    * @param tensileStrength     Bond tensile strength. Default = 0 (no tensile failure).
+    * @param cohesion            Bond cohesion. Default = 0 (no shear failure).
+    * @param frictionCoefficient Bond friction coefficient. Default = 0.
+    *
+    * @note Does nothing if either particle index is out of range.
+    */
+    void addBondedInteraction(const int masterObjectID, 
+    const int slaveObjectID, 
+    const double3 bondPoint, 
+    const double3 bondNormal, 
+    const double radius, 
+    const double initialLength, 
+    const double YoungsModulus, 
+    const double poissonRatio, 
+    const double tensileStrength = 0., 
+    const double cohesion= 0., 
+    const double frictionCoefficient= 0.)
+    {
+        if (masterObjectID >= LSParticle_.num() || slaveObjectID >= LSParticle_.num()) return;
+        VBondedInteraction_.add(masterObjectID, 
+        slaveObjectID, 
+        LSParticle_.positionHostRef()[masterObjectID], 
+        LSParticle_.positionHostRef()[slaveObjectID], 
+        LSParticle_.orientationHostRef()[masterObjectID], 
+        LSParticle_.orientationHostRef()[slaveObjectID], 
+        bondPoint, 
+        bondNormal, 
+        radius, 
+        initialLength, 
+        YoungsModulus, 
+        poissonRatio, 
+        tensileStrength, 
+        cohesion, 
+        frictionCoefficient);
+    }
+
+     /**
      * @brief Create bonded interactions between free level-set particles.
      *
      * @param YoungsModulus Bond Young's modulus.
@@ -274,7 +382,7 @@ public:
      * @param cohesion Bond cohesion.
      * @param frictionCoefficient Bond friction coefficient.
      */
-    void addBondedInteraction(const double radius, 
+    void createBondsFromContacts(const double radius, 
     const double initialLength, 
     const double YoungsModulus, 
     const double poissonRatio, 
@@ -309,51 +417,45 @@ public:
         }
     }
 
-    void addBondedInteraction(const int masterObjectID, 
-    const int slaveObjectID, 
-    const double3 bondPoint, 
-    const double3 bondNormal, 
-    const double radius, 
-    const double initialLength, 
-    const double YoungsModulus, 
-    const double poissonRatio, 
-    const double tensileStrength = 0., 
-    const double cohesion= 0., 
-    const double frictionCoefficient= 0.)
-    {
-        if (masterObjectID >= LSParticle_.num() || slaveObjectID >= LSParticle_.num()) return;
-        VBondedInteraction_.add(masterObjectID, 
-        slaveObjectID, 
-        LSParticle_.positionHostRef()[masterObjectID], 
-        LSParticle_.positionHostRef()[slaveObjectID], 
-        LSParticle_.orientationHostRef()[masterObjectID], 
-        LSParticle_.orientationHostRef()[slaveObjectID], 
-        bondPoint, 
-        bondNormal, 
-        radius, 
-        initialLength, 
-        YoungsModulus, 
-        poissonRatio, 
-        tensileStrength, 
-        cohesion, 
-        frictionCoefficient);
-    }
-
+    /**
+    * @brief Enable periodic boundary condition in the X direction.
+    *
+    * Particles leaving one side of the domain in X are mirrored as ghost
+    * particles on the opposite side to maintain periodicity.
+    */
     void addPeriodicBoundaryXD()
     {
         PeriodicBoundaryXY2D_.turnXOn();
     }
 
+    /**
+    * @brief Enable periodic boundary condition in the Y direction.
+    *
+    * Particles leaving one side of the domain in Y are mirrored as ghost
+    * particles on the opposite side to maintain periodicity.
+    */
     void addPeriodicBoundaryYD()
     {
         PeriodicBoundaryXY2D_.turnYOn();
     }
 
+    /**
+    * @brief Enable periodic boundary condition for a sector geometry.
+    *
+    * Particles are replicated at 90°, 180°, and 270° rotations to enforce
+    * rotational periodicity within a quarter-sector domain.
+    */
     void addPeriodicBoundarySector()
     {
         PeriodicBoundarySector_.turnOn();
     }
 
+    /**
+    * @brief Disable all active periodic boundary conditions.
+    *
+    * Turns off both XY planar periodicity (X and Y directions) and
+    * sector rotational periodicity.
+    */
     void removePeriodicBoundary()
     {
         PeriodicBoundarySector_.turnOff();
@@ -528,12 +630,21 @@ private:
         Wall_.finalize(stream_);
         LSParticleWallInteraction_.finalize(stream_);
         VBondedInteraction_.finalize(stream_);
+        cudaStreamSynchronize(stream_);
         std::cout << "[Solver] Download Completed" << std::endl;
     }
 
     void output(const size_t iFrame, const size_t iStep, const double time)
     {
         std::cout << "[Solver] Phase " << phase_ << ": ------ Frame " << iFrame << " at Time " << time << " ------ " << std::endl;
+        const double memTotal = LSParticle_.deviceMemoryGB()
+        + LSParticleInteraction_.deviceMemoryGB()
+        + Wall_.deviceMemoryGB()
+        + LSParticleWallInteraction_.deviceMemoryGB()
+        + VBondedInteraction_.deviceMemoryGB()
+        + PeriodicBoundaryXY2D_.deviceMemoryGB()
+        + PeriodicBoundarySector_.deviceMemoryGB();
+        std::cout << "[Solver] GPU Memory Usage: " << memTotal << " GB" << std::endl;
 
         download();
         

@@ -51,6 +51,12 @@ struct VBondPoint
         localVectorN3_.setHost(other.localVectorN3_.hostRef());
         localPosition_.setHost(other.localPosition_.hostRef());
     }
+
+    double deviceMemoryGB() const
+    {
+        return localVectorN1_.deviceMemoryGB() + localVectorN2_.deviceMemoryGB() + localVectorN3_.deviceMemoryGB()
+         + localPosition_.deviceMemoryGB();
+    }
 };
 
 struct VBondedInteraction
@@ -200,8 +206,50 @@ public:
         gridDim_ = (numBondedPair + blockDim_ - 1) / blockDim_;
     }
 
+    double deviceMemoryGB() const
+    {
+        double total = 0.0;
+
+        // IDs
+        total += masterObjectID_.deviceMemoryGB();
+        total += slaveObjectID_.deviceMemoryGB();
+
+        // State
+        total += activated_.deviceMemoryGB();
+        total += centerPoint_.deviceMemoryGB();
+
+        // Geometry
+        total += radius_.deviceMemoryGB();
+        total += initialLength_.deviceMemoryGB();
+
+        // Stiffness coefficients
+        total += B1_.deviceMemoryGB();
+        total += B2_.deviceMemoryGB();
+        total += B3_.deviceMemoryGB();
+        total += B4_.deviceMemoryGB();
+
+        // Energy
+        total += Un_.deviceMemoryGB();
+        total += Us_.deviceMemoryGB();
+        total += Ub_.deviceMemoryGB();
+        total += Ut_.deviceMemoryGB();
+        total += maxNormalStress_.deviceMemoryGB();
+        total += maxShearStress_.deviceMemoryGB();
+
+        // Failure criteria
+        total += tensileStrength_.deviceMemoryGB();
+        total += cohesion_.deviceMemoryGB();
+        total += frictionCoefficient_.deviceMemoryGB();
+
+        // Bond points
+        total += masterVBondPoint_.deviceMemoryGB();
+        total += slaveVBondPoint_.deviceMemoryGB();
+
+        return total;
+    }
+
     /**
-    * @brief Output bonded interaction state to VTU (binary appended format).
+    * @brief Output bonded interaction state to VTU (inline base64 binary format).
     *
     * Each bond is stored as VTK_VERTEX at centerPoint_.
     * PointData stores bond state variables.
@@ -222,137 +270,181 @@ public:
 
         const size_t N = numPair();
 
-        const std::vector<int>& masterObjectID = masterObjectID_.hostRef();
-        const std::vector<int>& slaveObjectID = slaveObjectID_.hostRef();
-        const std::vector<int>& activated = activated_.hostRef();
-        const std::vector<double3>& point = centerPoint_.hostRef();
+        const std::vector<int>&     masterObjectID = masterObjectID_.hostRef();
+        const std::vector<int>&     slaveObjectID  = slaveObjectID_.hostRef();
+        const std::vector<int>&     activated      = activated_.hostRef();
+        const std::vector<double3>& point          = centerPoint_.hostRef();
 
-        const std::vector<double>& Un = Un_.hostRef();
-        const std::vector<double>& Us = Us_.hostRef();
-        const std::vector<double>& Ub = Ub_.hostRef();
-        const std::vector<double>& Ut = Ut_.hostRef();
+        const std::vector<double>& Un             = Un_.hostRef();
+        const std::vector<double>& Us             = Us_.hostRef();
+        const std::vector<double>& Ub             = Ub_.hostRef();
+        const std::vector<double>& Ut             = Ut_.hostRef();
         const std::vector<double>& maxNormalStress = maxNormalStress_.hostRef();
-        const std::vector<double>& maxShearStress = maxShearStress_.hostRef();
+        const std::vector<double>& maxShearStress  = maxShearStress_.hostRef();
 
         // -------------------------------------------------------------------------
-        std::vector<float> points(3 * N);
-        std::vector<int32_t> connectivity(N), offsets(N);
+        // Precompute arrays
+        // -------------------------------------------------------------------------
+        std::vector<float>   points(3 * N);
+        std::vector<int32_t> connectivity(N);
+        std::vector<int32_t> offsets(N);
         std::vector<uint8_t> types(N, 1);
 
         std::vector<int32_t> mid(masterObjectID.begin(), masterObjectID.end());
-        std::vector<int32_t> sid(slaveObjectID.begin(), slaveObjectID.end());
-        std::vector<int32_t> act(activated.begin(), activated.end());
+        std::vector<int32_t> sid(slaveObjectID.begin(),  slaveObjectID.end());
+        std::vector<int32_t> act(activated.begin(),      activated.end());
 
         std::vector<float> un(N), us(N), ub(N), ut(N);
         std::vector<float> sn(N), ss(N);
 
         for (size_t i = 0; i < N; ++i)
         {
-            points[3*i+0] = (float)point[i].x;
-            points[3*i+1] = (float)point[i].y;
-            points[3*i+2] = (float)point[i].z;
+            points[3 * i + 0] = static_cast<float>(point[i].x);
+            points[3 * i + 1] = static_cast<float>(point[i].y);
+            points[3 * i + 2] = static_cast<float>(point[i].z);
 
-            connectivity[i] = (int32_t)i;
-            offsets[i] = (int32_t)(i + 1);
+            connectivity[i] = static_cast<int32_t>(i);
+            offsets[i]      = static_cast<int32_t>(i + 1);
 
-            un[i] = (float)Un[i];
-            us[i] = (float)Us[i];
-            ub[i] = (float)Ub[i];
-            ut[i] = (float)Ut[i];
+            un[i] = static_cast<float>(Un[i]);
+            us[i] = static_cast<float>(Us[i]);
+            ub[i] = static_cast<float>(Ub[i]);
+            ut[i] = static_cast<float>(Ut[i]);
 
-            sn[i] = (float)maxNormalStress[i];
-            ss[i] = (float)maxShearStress[i];
+            sn[i] = static_cast<float>(maxNormalStress[i]);
+            ss[i] = static_cast<float>(maxShearStress[i]);
         }
 
         // -------------------------------------------------------------------------
-        size_t offset = 0;
-        auto B = [&](size_t n) { return sizeof(uint64_t) + n; };
-
-        size_t off_p = offset; offset += B(points.size()*sizeof(float));
-        size_t off_c = offset; offset += B(connectivity.size()*sizeof(int32_t));
-        size_t off_o = offset; offset += B(offsets.size()*sizeof(int32_t));
-        size_t off_t = offset; offset += B(types.size()*sizeof(uint8_t));
-
-        size_t off_mid = offset; offset += B(mid.size()*sizeof(int32_t));
-        size_t off_sid = offset; offset += B(sid.size()*sizeof(int32_t));
-        size_t off_act = offset; offset += B(act.size()*sizeof(int32_t));
-
-        size_t off_un = offset; offset += B(un.size()*sizeof(float));
-        size_t off_us = offset; offset += B(us.size()*sizeof(float));
-        size_t off_ub = offset; offset += B(ub.size()*sizeof(float));
-        size_t off_ut = offset; offset += B(ut.size()*sizeof(float));
-
-        size_t off_sn = offset; offset += B(sn.size()*sizeof(float));
-        size_t off_ss = offset; offset += B(ss.size()*sizeof(float));
-
-        std::ofstream out(fname.str(), std::ios::binary);
-        if (!out) throw std::runtime_error("Cannot open " + fname.str());
+        // Open file
+        // -------------------------------------------------------------------------
+        std::ofstream out(fname.str());
+        if (!out)
+            throw std::runtime_error("Cannot open for writing: " + fname.str());
 
         // -------------------------------------------------------------------------
-        out << "<?xml version=\"1.0\"?>\n";
-        out << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" "
-            "byte_order=\"LittleEndian\" header_type=\"UInt64\">\n";
-        out << "<UnstructuredGrid>\n";
+        // base64 encoder
+        // -------------------------------------------------------------------------
+        static const char kB64Table[] =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-        out << "<FieldData>\n";
-        out << "<DataArray type=\"Float32\" Name=\"TIME\" NumberOfTuples=\"1\" format=\"ascii\">" << (float)time << "</DataArray>\n";
-        out << "<DataArray type=\"Int32\" Name=\"STEP\" NumberOfTuples=\"1\" format=\"ascii\">" << (int32_t)iStep << "</DataArray>\n";
-        out << "</FieldData>\n";
-
-        out << "<Piece NumberOfPoints=\"" << N << "\" NumberOfCells=\"" << N << "\">\n";
-
-        out << "<Points>\n";
-        out << "<DataArray type=\"Float32\" NumberOfComponents=\"3\" format=\"appended\" offset=\"" << off_p << "\"/>\n";
-        out << "</Points>\n";
-
-        out << "<Cells>\n";
-        out << "<DataArray type=\"Int32\" Name=\"connectivity\" format=\"appended\" offset=\"" << off_c << "\"/>\n";
-        out << "<DataArray type=\"Int32\" Name=\"offsets\" format=\"appended\" offset=\"" << off_o << "\"/>\n";
-        out << "<DataArray type=\"UInt8\" Name=\"types\" format=\"appended\" offset=\"" << off_t << "\"/>\n";
-        out << "</Cells>\n";
-
-        out << "<PointData Scalars=\"activated\">\n";
-        out << "<DataArray type=\"Int32\" Name=\"masterObjectID\" format=\"appended\" offset=\"" << off_mid << "\"/>\n";
-        out << "<DataArray type=\"Int32\" Name=\"slaveObjectID\" format=\"appended\" offset=\"" << off_sid << "\"/>\n";
-        out << "<DataArray type=\"Int32\" Name=\"activated\" format=\"appended\" offset=\"" << off_act << "\"/>\n";
-
-        out << "<DataArray type=\"Float32\" Name=\"normalElasticEnergy\" format=\"appended\" offset=\"" << off_un << "\"/>\n";
-        out << "<DataArray type=\"Float32\" Name=\"shearElasticEnergy\" format=\"appended\" offset=\"" << off_us << "\"/>\n";
-        out << "<DataArray type=\"Float32\" Name=\"bendingElasticEnergy\" format=\"appended\" offset=\"" << off_ub << "\"/>\n";
-        out << "<DataArray type=\"Float32\" Name=\"torsionElasticEnergy\" format=\"appended\" offset=\"" << off_ut << "\"/>\n";
-
-        out << "<DataArray type=\"Float32\" Name=\"maxNormalStress\" format=\"appended\" offset=\"" << off_sn << "\"/>\n";
-        out << "<DataArray type=\"Float32\" Name=\"maxShearStress\" format=\"appended\" offset=\"" << off_ss << "\"/>\n";
-        out << "</PointData>\n";
-
-        out << "</Piece>\n</UnstructuredGrid>\n";
-        out << "<AppendedData encoding=\"raw\">\n_";
-
-        auto W = [&](const void* d, size_t n)
+        auto toB64 = [&](const void* data, size_t nBytes)
         {
-            uint64_t s = n;
-            out.write((char*)&s, sizeof(uint64_t));
-            out.write((char*)d, n);
+            const uint64_t sz = static_cast<uint64_t>(nBytes);
+            std::vector<uint8_t> buf(sizeof(uint64_t) + nBytes);
+            std::memcpy(buf.data(),                    &sz,  sizeof(uint64_t));
+            std::memcpy(buf.data() + sizeof(uint64_t), data, nBytes);
+
+            const uint8_t* in  = buf.data();
+            const size_t   len = buf.size();
+
+            for (size_t i = 0; i < len; i += 3)
+            {
+                const uint32_t b0 = in[i];
+                const uint32_t b1 = (i + 1 < len) ? in[i + 1] : 0u;
+                const uint32_t b2 = (i + 2 < len) ? in[i + 2] : 0u;
+                const uint32_t v  = (b0 << 16) | (b1 << 8) | b2;
+
+                out.put(kB64Table[(v >> 18) & 0x3F]);
+                out.put(kB64Table[(v >> 12) & 0x3F]);
+                out.put((i + 1 < len) ? kB64Table[(v >> 6) & 0x3F] : '=');
+                out.put((i + 2 < len) ? kB64Table[(v     ) & 0x3F] : '=');
+            }
         };
 
-        W(points.data(), points.size()*sizeof(float));
-        W(connectivity.data(), connectivity.size()*sizeof(int32_t));
-        W(offsets.data(), offsets.size()*sizeof(int32_t));
-        W(types.data(), types.size()*sizeof(uint8_t));
+        // -------------------------------------------------------------------------
+        // XML
+        // -------------------------------------------------------------------------
+        out << "<?xml version=\"1.0\"?>\n"
+            << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" "
+            "byte_order=\"LittleEndian\" header_type=\"UInt64\">\n"
+            << "<UnstructuredGrid>\n";
 
-        W(mid.data(), mid.size()*sizeof(int32_t));
-        W(sid.data(), sid.size()*sizeof(int32_t));
-        W(act.data(), act.size()*sizeof(int32_t));
+        // FieldData
+        out << "<FieldData>\n"
+            << "<DataArray type=\"Float32\" Name=\"TIME\" "
+            "NumberOfTuples=\"1\" format=\"ascii\">"
+            << static_cast<float>(time)
+            << "</DataArray>\n"
+            << "<DataArray type=\"Int32\" Name=\"STEP\" "
+            "NumberOfTuples=\"1\" format=\"ascii\">"
+            << static_cast<int32_t>(iStep)
+            << "</DataArray>\n"
+            << "</FieldData>\n";
 
-        W(un.data(), un.size()*sizeof(float));
-        W(us.data(), us.size()*sizeof(float));
-        W(ub.data(), ub.size()*sizeof(float));
-        W(ut.data(), ut.size()*sizeof(float));
+        out << "<Piece NumberOfPoints=\"" << N
+            << "\" NumberOfCells=\""      << N << "\">\n";
 
-        W(sn.data(), sn.size()*sizeof(float));
-        W(ss.data(), ss.size()*sizeof(float));
+        // Points
+        out << "<Points>\n"
+            << "<DataArray type=\"Float32\" NumberOfComponents=\"3\" format=\"binary\">\n";
+        toB64(points.data(), points.size() * sizeof(float));
+        out << "\n</DataArray>\n"
+            << "</Points>\n";
 
-        out << "\n</AppendedData>\n</VTKFile>\n";
+        // Cells
+        out << "<Cells>\n";
+
+        out << "<DataArray type=\"Int32\" Name=\"connectivity\" format=\"binary\">\n";
+        toB64(connectivity.data(), connectivity.size() * sizeof(int32_t));
+        out << "\n</DataArray>\n";
+
+        out << "<DataArray type=\"Int32\" Name=\"offsets\" format=\"binary\">\n";
+        toB64(offsets.data(), offsets.size() * sizeof(int32_t));
+        out << "\n</DataArray>\n";
+
+        out << "<DataArray type=\"UInt8\" Name=\"types\" format=\"binary\">\n";
+        toB64(types.data(), types.size() * sizeof(uint8_t));
+        out << "\n</DataArray>\n";
+
+        out << "</Cells>\n";
+
+        // PointData
+        out << "<PointData Scalars=\"activated\">\n";
+
+        out << "<DataArray type=\"Int32\" Name=\"masterObjectID\" format=\"binary\">\n";
+        toB64(mid.data(), mid.size() * sizeof(int32_t));
+        out << "\n</DataArray>\n";
+
+        out << "<DataArray type=\"Int32\" Name=\"slaveObjectID\" format=\"binary\">\n";
+        toB64(sid.data(), sid.size() * sizeof(int32_t));
+        out << "\n</DataArray>\n";
+
+        out << "<DataArray type=\"Int32\" Name=\"activated\" format=\"binary\">\n";
+        toB64(act.data(), act.size() * sizeof(int32_t));
+        out << "\n</DataArray>\n";
+
+        out << "<DataArray type=\"Float32\" Name=\"normalElasticEnergy\" format=\"binary\">\n";
+        toB64(un.data(), un.size() * sizeof(float));
+        out << "\n</DataArray>\n";
+
+        out << "<DataArray type=\"Float32\" Name=\"shearElasticEnergy\" format=\"binary\">\n";
+        toB64(us.data(), us.size() * sizeof(float));
+        out << "\n</DataArray>\n";
+
+        out << "<DataArray type=\"Float32\" Name=\"bendingElasticEnergy\" format=\"binary\">\n";
+        toB64(ub.data(), ub.size() * sizeof(float));
+        out << "\n</DataArray>\n";
+
+        out << "<DataArray type=\"Float32\" Name=\"torsionElasticEnergy\" format=\"binary\">\n";
+        toB64(ut.data(), ut.size() * sizeof(float));
+        out << "\n</DataArray>\n";
+
+        out << "<DataArray type=\"Float32\" Name=\"maxNormalStress\" format=\"binary\">\n";
+        toB64(sn.data(), sn.size() * sizeof(float));
+        out << "\n</DataArray>\n";
+
+        out << "<DataArray type=\"Float32\" Name=\"maxShearStress\" format=\"binary\">\n";
+        toB64(ss.data(), ss.size() * sizeof(float));
+        out << "\n</DataArray>\n";
+
+        out << "</PointData>\n"
+            << "</Piece>\n"
+            << "</UnstructuredGrid>\n"
+            << "</VTKFile>\n";
+
+        if (!out)
+            throw std::runtime_error("Write error on: " + fname.str());
     }
 
     void finalize(cudaStream_t stream)

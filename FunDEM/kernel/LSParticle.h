@@ -21,6 +21,10 @@ public:
 
     const size_t num() const { return signedDistanceField_.hostSize(); }
     const size_t num_device() const { return signedDistanceField_.deviceSize(); }
+    double deviceMemoryGB() const
+    {
+        return signedDistanceField_.deviceMemoryGB();
+    }
 
     double* signedDistanceField() { return signedDistanceField_.d_ptr; }
 
@@ -51,7 +55,10 @@ public:
 
     const size_t num() const { return localPosition_.hostSize(); }
     const size_t num_device() const { return localPosition_.deviceSize(); }
-
+    double deviceMemoryGB() const
+    {
+        return localPosition_.deviceMemoryGB() + particleID_.deviceMemoryGB();
+    }
     double3* localPosition() { return localPosition_.d_ptr; }
     int* particleID() { return particleID_.d_ptr; }
 
@@ -199,6 +206,9 @@ public:
         gridNodeSize_.pushHost(gridNodeSize);
         const int gridNodePrefixSum = static_cast<int>(LSGridNode_.num());
         gridNodePrefixSum_.pushHost(gridNodePrefixSum);
+
+        hashValue_.pushHost(-1);
+        hashIndex_.pushHost(-1);
     }
     
     void move(const size_t index, const double3 offset)
@@ -236,8 +246,6 @@ public:
         {
             copyHostToDevice(stream);
 
-            hashValue_.allocateDevice(numParticle, stream);
-            hashIndex_.allocateDevice(numParticle, stream);
             if (maxGPUThread > 0) blockDim_ = maxGPUThread;
             if (numParticle < maxGPUThread) blockDim_ = numParticle;
             gridDim_ = (numParticle + blockDim_ - 1) / blockDim_;
@@ -247,8 +255,46 @@ public:
         spatialGrid_.set(minDomain, maxDomain, cellSizeOneDim, stream);
     }
 
+    double deviceMemoryGB() const
+    {
+        double total = 0.0;
+
+        // Particle state
+        total += position_.deviceMemoryGB();
+        total += velocity_.deviceMemoryGB();
+        total += angularVelocity_.deviceMemoryGB();
+        total += force_.deviceMemoryGB();
+        total += torque_.deviceMemoryGB();
+        total += orientation_.deviceMemoryGB();
+        total += radius_.deviceMemoryGB();
+        total += inverseMass_.deviceMemoryGB();
+        total += inverseInertiaTensor_.deviceMemoryGB();
+        total += normalStiffness_.deviceMemoryGB();
+        total += shearStiffness_.deviceMemoryGB();
+        total += frictionCoefficient_.deviceMemoryGB();
+        total += restitutionCoefficient_.deviceMemoryGB();
+
+        // Grid metadata
+        total += gridNodeLocalOrigin_.deviceMemoryGB();
+        total += inverseGridNodeSpacing_.deviceMemoryGB();
+        total += gridNodeSize_.deviceMemoryGB();
+        total += gridNodePrefixSum_.deviceMemoryGB();
+
+        // LS grid node SDF values
+        total += LSGridNode_.deviceMemoryGB();
+
+        // LS boundary nodes
+        total += LSBoundaryNode_.deviceMemoryGB();
+
+        // Hash
+        total += hashValue_.deviceMemoryGB();
+        total += hashIndex_.deviceMemoryGB();
+
+        return total;
+    }
+
     /**
-    * @brief Export Level Set boundary mesh to VTU (binary appended format)
+    * @brief Export Level Set boundary mesh to VTU (inline base64 binary format)
     *
     * Output:
     * - Points (world position)
@@ -260,7 +306,7 @@ public:
     * @param iStep   Simulation step
     * @param time    Simulation time
     *
-    * @note Binary appended VTU format (UInt64 header)
+    * @note Inline base64 binary VTU format (UInt64 header, LittleEndian)
     */
     void outputVTU(const std::string& dir, const size_t iFrame, const size_t iStep, const double time) const
     {
@@ -274,20 +320,20 @@ public:
         const size_t N = LSBoundaryNode_.num();
         const size_t M = LSBoundaryNodeConnectivity_.size();
 
-        const std::vector<int>& pID = LSBoundaryNode_.particleIDHostRef();
-        const std::vector<double3>& pLocal = LSBoundaryNode_.localPositionHostRef();
+        const std::vector<int>&        pID    = LSBoundaryNode_.particleIDHostRef();
+        const std::vector<double3>&    pLocal = LSBoundaryNode_.localPositionHostRef();
 
-        const std::vector<double3>& p_p = position_.hostRef();
-        const std::vector<double3>& v_p = velocity_.hostRef();
-        const std::vector<double3>& w_p = angularVelocity_.hostRef();
+        const std::vector<double3>&    p_p = position_.hostRef();
+        const std::vector<double3>&    v_p = velocity_.hostRef();
+        const std::vector<double3>&    w_p = angularVelocity_.hostRef();
         const std::vector<quaternion>& q_p = orientation_.hostRef();
 
         // -------------------------------------------------------------------------
         // Precompute arrays
         // -------------------------------------------------------------------------
-        std::vector<float> points(3 * N);
+        std::vector<float>   points(3 * N);
         std::vector<int32_t> particleID(N);
-        std::vector<float> velocity(3 * N);
+        std::vector<float>   velocity(3 * N);
 
         for (size_t i = 0; i < N; ++i)
         {
@@ -323,7 +369,7 @@ public:
         // -------------------------------------------------------------------------
         std::vector<int32_t> connectivity(3 * M);
         std::vector<int32_t> offsets(M);
-        std::vector<uint8_t> types(M, 5);
+        std::vector<uint8_t> types(M, 5); // VTK_TRIANGLE = 5
 
         for (size_t i = 0; i < M; ++i)
         {
@@ -337,102 +383,113 @@ public:
         }
 
         // -------------------------------------------------------------------------
-        // Offsets (VTU appended layout)
+        // Open file (text mode — XML only, no raw binary)
         // -------------------------------------------------------------------------
-        size_t offset = 0;
+        std::ofstream out(fname.str());
+        if (!out)
+            throw std::runtime_error("Cannot open for writing: " + fname.str());
 
-        auto blockSize = [](size_t nBytes)
+        // -------------------------------------------------------------------------
+        // base64 encoder
+        // Inline binary format: each DataArray = base64( [uint64_t byteCount][data] )
+        // -------------------------------------------------------------------------
+        static const char kB64Table[] =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+        auto toB64 = [&](const void* data, size_t nBytes)
         {
-            return sizeof(uint64_t) + nBytes;
+            const uint64_t sz = static_cast<uint64_t>(nBytes);
+            std::vector<uint8_t> buf(sizeof(uint64_t) + nBytes);
+            std::memcpy(buf.data(),                    &sz,  sizeof(uint64_t));
+            std::memcpy(buf.data() + sizeof(uint64_t), data, nBytes);
+
+            const uint8_t* in  = buf.data();
+            const size_t   len = buf.size();
+
+            for (size_t i = 0; i < len; i += 3)
+            {
+                const uint32_t b0 = in[i];
+                const uint32_t b1 = (i + 1 < len) ? in[i + 1] : 0u;
+                const uint32_t b2 = (i + 2 < len) ? in[i + 2] : 0u;
+                const uint32_t v  = (b0 << 16) | (b1 << 8) | b2;
+
+                out.put(kB64Table[(v >> 18) & 0x3F]);
+                out.put(kB64Table[(v >> 12) & 0x3F]);
+                out.put((i + 1 < len) ? kB64Table[(v >> 6) & 0x3F] : '=');
+                out.put((i + 2 < len) ? kB64Table[(v     ) & 0x3F] : '=');
+            }
         };
 
-        size_t off_points = offset; offset += blockSize(points.size() * sizeof(float));
-        size_t off_conn = offset; offset += blockSize(connectivity.size() * sizeof(int32_t));
-        size_t off_offs = offset; offset += blockSize(offsets.size() * sizeof(int32_t));
-        size_t off_types = offset; offset += blockSize(types.size() * sizeof(uint8_t));
-        size_t off_pid = offset; offset += blockSize(particleID.size() * sizeof(int32_t));
-        size_t off_vel = offset; offset += blockSize(velocity.size() * sizeof(float));
-
-        std::ofstream out(fname.str(), std::ios::binary);
-        if (!out) throw std::runtime_error("Cannot open " + fname.str());
-
         // -------------------------------------------------------------------------
-        // XML header
+        // XML
         // -------------------------------------------------------------------------
-        out << "<?xml version=\"1.0\"?>\n";
-        out << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" "
-            "byte_order=\"LittleEndian\" header_type=\"UInt64\">\n";
+        out << "<?xml version=\"1.0\"?>\n"
+            << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" "
+            "byte_order=\"LittleEndian\" header_type=\"UInt64\">\n"
+            << "<UnstructuredGrid>\n";
 
-        out << "<UnstructuredGrid>\n";
-
-        out << "<FieldData>\n";
-        out << "<DataArray type=\"Float32\" Name=\"TIME\" NumberOfTuples=\"1\" format=\"ascii\"> "
-            << static_cast<float>(time) << " </DataArray>\n";
-        out << "<DataArray type=\"Int32\" Name=\"STEP\" NumberOfTuples=\"1\" format=\"ascii\"> "
-            << static_cast<int32_t>(iStep) << " </DataArray>\n";
-        out << "</FieldData>\n";
+        // FieldData
+        out << "<FieldData>\n"
+            << "<DataArray type=\"Float32\" Name=\"TIME\" "
+            "NumberOfTuples=\"1\" format=\"ascii\">"
+            << static_cast<float>(time)
+            << "</DataArray>\n"
+            << "<DataArray type=\"Int32\" Name=\"STEP\" "
+            "NumberOfTuples=\"1\" format=\"ascii\">"
+            << static_cast<int32_t>(iStep)
+            << "</DataArray>\n"
+            << "</FieldData>\n";
 
         out << "<Piece NumberOfPoints=\"" << N
-            << "\" NumberOfCells=\"" << M << "\">\n";
+            << "\" NumberOfCells=\""      << M << "\">\n";
 
-        // -------------------------------------------------------------------------
         // Points
-        // -------------------------------------------------------------------------
-        out << "<Points>\n";
-        out << "<DataArray type=\"Float32\" NumberOfComponents=\"3\" "
-            "format=\"appended\" offset=\"" << off_points << "\"/>\n";
-        out << "</Points>\n";
+        out << "<Points>\n"
+            << "<DataArray type=\"Float32\" NumberOfComponents=\"3\" format=\"binary\">\n";
+        toB64(points.data(), points.size() * sizeof(float));
+        out << "\n</DataArray>\n"
+            << "</Points>\n";
 
-        // -------------------------------------------------------------------------
         // Cells
-        // -------------------------------------------------------------------------
         out << "<Cells>\n";
-        out << "<DataArray type=\"Int32\" Name=\"connectivity\" "
-            "format=\"appended\" offset=\"" << off_conn << "\"/>\n";
-        out << "<DataArray type=\"Int32\" Name=\"offsets\" "
-            "format=\"appended\" offset=\"" << off_offs << "\"/>\n";
-        out << "<DataArray type=\"UInt8\" Name=\"types\" "
-            "format=\"appended\" offset=\"" << off_types << "\"/>\n";
+
+        out << "<DataArray type=\"Int32\" Name=\"connectivity\" format=\"binary\">\n";
+        toB64(connectivity.data(), connectivity.size() * sizeof(int32_t));
+        out << "\n</DataArray>\n";
+
+        out << "<DataArray type=\"Int32\" Name=\"offsets\" format=\"binary\">\n";
+        toB64(offsets.data(), offsets.size() * sizeof(int32_t));
+        out << "\n</DataArray>\n";
+
+        out << "<DataArray type=\"UInt8\" Name=\"types\" format=\"binary\">\n";
+        toB64(types.data(), types.size() * sizeof(uint8_t));
+        out << "\n</DataArray>\n";
+
         out << "</Cells>\n";
 
-        // -------------------------------------------------------------------------
         // PointData
-        // -------------------------------------------------------------------------
         out << "<PointData Vectors=\"velocity\">\n";
-        out << "<DataArray type=\"Int32\" Name=\"particleID\" "
-            "format=\"appended\" offset=\"" << off_pid << "\"/>\n";
+
+        out << "<DataArray type=\"Int32\" Name=\"particleID\" format=\"binary\">\n";
+        toB64(particleID.data(), particleID.size() * sizeof(int32_t));
+        out << "\n</DataArray>\n";
+
         out << "<DataArray type=\"Float32\" Name=\"velocity\" "
-            "NumberOfComponents=\"3\" format=\"appended\" offset=\"" << off_vel << "\"/>\n";
-        out << "</PointData>\n";
+            "NumberOfComponents=\"3\" format=\"binary\">\n";
+        toB64(velocity.data(), velocity.size() * sizeof(float));
+        out << "\n</DataArray>\n";
 
-        out << "</Piece>\n";
-        out << "</UnstructuredGrid>\n";
+        out << "</PointData>\n"
+            << "</Piece>\n"
+            << "</UnstructuredGrid>\n"
+            << "</VTKFile>\n";
 
-        // -------------------------------------------------------------------------
-        // Appended binary data
-        // -------------------------------------------------------------------------
-        out << "<AppendedData encoding=\"raw\">\n_";
-
-        auto writeBlock = [&](const void* data, size_t nBytes)
-        {
-            uint64_t sz = static_cast<uint64_t>(nBytes);
-            out.write(reinterpret_cast<const char*>(&sz), sizeof(uint64_t));
-            out.write(reinterpret_cast<const char*>(data), nBytes);
-        };
-
-        writeBlock(points.data(), points.size() * sizeof(float));
-        writeBlock(connectivity.data(), connectivity.size() * sizeof(int32_t));
-        writeBlock(offsets.data(), offsets.size() * sizeof(int32_t));
-        writeBlock(types.data(), types.size() * sizeof(uint8_t));
-        writeBlock(particleID.data(), particleID.size() * sizeof(int32_t));
-        writeBlock(velocity.data(), velocity.size() * sizeof(float));
-
-        out << "\n</AppendedData>\n";
-        out << "</VTKFile>\n";
+        if (!out)
+            throw std::runtime_error("Write error on: " + fname.str());
     }
 
     /**
-    * @brief Export particle state to VTU (binary appended format)
+    * @brief Export particle state to VTU (inline base64 binary format)
     *
     * Output:
     * - Points: particle position
@@ -446,7 +503,7 @@ public:
     * @param iStep   Simulation step
     * @param time    Simulation time
     *
-    * @note Binary appended VTU format (UInt64 header)
+    * @note Inline base64 binary VTU format (UInt64 header, LittleEndian)
     */
     void outputParticleVTU(const std::string& dir, const size_t iFrame, const size_t iStep, const double time) const
     {
@@ -458,10 +515,11 @@ public:
         std::ostringstream fname;
         fname << dir << "/Particle_" << std::setw(4) << std::setfill('0') << iFrame << ".vtu";
 
-        const std::vector<double3>& p = position_.hostRef();
-        const std::vector<double3>& v = velocity_.hostRef();
-        const std::vector<double3>& w = angularVelocity_.hostRef();
+        const std::vector<double3>&    p = position_.hostRef();
+        const std::vector<double3>&    v = velocity_.hostRef();
+        const std::vector<double3>&    w = angularVelocity_.hostRef();
         const std::vector<quaternion>& q = orientation_.hostRef();
+        const std::vector<double>&     r = radius_.hostRef();
 
         // -------------------------------------------------------------------------
         // Precompute arrays
@@ -470,110 +528,129 @@ public:
         std::vector<float> vel(3 * N);
         std::vector<float> angVel(3 * N);
         std::vector<float> ori(4 * N);
+        std::vector<float> radius(N);
 
         for (size_t i = 0; i < N; ++i)
         {
-            points[3 * i + 0] = (float)p[i].x;
-            points[3 * i + 1] = (float)p[i].y;
-            points[3 * i + 2] = (float)p[i].z;
+            points[3 * i + 0] = static_cast<float>(p[i].x);
+            points[3 * i + 1] = static_cast<float>(p[i].y);
+            points[3 * i + 2] = static_cast<float>(p[i].z);
 
-            vel[3 * i + 0] = (float)v[i].x;
-            vel[3 * i + 1] = (float)v[i].y;
-            vel[3 * i + 2] = (float)v[i].z;
+            vel[3 * i + 0] = static_cast<float>(v[i].x);
+            vel[3 * i + 1] = static_cast<float>(v[i].y);
+            vel[3 * i + 2] = static_cast<float>(v[i].z);
 
-            angVel[3 * i + 0] = (float)w[i].x;
-            angVel[3 * i + 1] = (float)w[i].y;
-            angVel[3 * i + 2] = (float)w[i].z;
+            angVel[3 * i + 0] = static_cast<float>(w[i].x);
+            angVel[3 * i + 1] = static_cast<float>(w[i].y);
+            angVel[3 * i + 2] = static_cast<float>(w[i].z);
 
-            ori[4 * i + 0] = (float)q[i].q0;
-            ori[4 * i + 1] = (float)q[i].q1;
-            ori[4 * i + 2] = (float)q[i].q2;
-            ori[4 * i + 3] = (float)q[i].q3;
+            ori[4 * i + 0] = static_cast<float>(q[i].q0);
+            ori[4 * i + 1] = static_cast<float>(q[i].q1);
+            ori[4 * i + 2] = static_cast<float>(q[i].q2);
+            ori[4 * i + 3] = static_cast<float>(q[i].q3);
+
+            radius[i] = static_cast<float>(r[i]);
         }
 
         // -------------------------------------------------------------------------
-        // Offsets
+        // Open file
         // -------------------------------------------------------------------------
-        size_t offset = 0;
-
-        auto B = [&](size_t n) { return sizeof(uint64_t) + n; };
-
-        size_t off_p = offset; offset += B(points.size() * sizeof(float));
-        size_t off_v = offset; offset += B(vel.size() * sizeof(float));
-        size_t off_w = offset; offset += B(angVel.size() * sizeof(float));
-        size_t off_q = offset; offset += B(ori.size() * sizeof(float));
-
-        std::ofstream out(fname.str(), std::ios::binary);
-        if (!out) throw std::runtime_error("Cannot open " + fname.str());
+        std::ofstream out(fname.str());
+        if (!out)
+            throw std::runtime_error("Cannot open for writing: " + fname.str());
 
         // -------------------------------------------------------------------------
-        // XML header
+        // base64 encoder
         // -------------------------------------------------------------------------
-        out << "<?xml version=\"1.0\"?>\n";
-        out << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" "
-            "byte_order=\"LittleEndian\" header_type=\"UInt64\">\n";
-        out << "<UnstructuredGrid>\n";
+        static const char kB64Table[] =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-        out << "<FieldData>\n";
-        out << "<DataArray type=\"Float32\" Name=\"TIME\" NumberOfTuples=\"1\" format=\"ascii\">"
-            << (float)time << "</DataArray>\n";
-        out << "<DataArray type=\"Int32\" Name=\"STEP\" NumberOfTuples=\"1\" format=\"ascii\">"
-            << (int32_t)iStep << "</DataArray>\n";
-        out << "</FieldData>\n";
+        auto toB64 = [&](const void* data, size_t nBytes)
+        {
+            const uint64_t sz = static_cast<uint64_t>(nBytes);
+            std::vector<uint8_t> buf(sizeof(uint64_t) + nBytes);
+            std::memcpy(buf.data(),                    &sz,  sizeof(uint64_t));
+            std::memcpy(buf.data() + sizeof(uint64_t), data, nBytes);
+
+            const uint8_t* in  = buf.data();
+            const size_t   len = buf.size();
+
+            for (size_t i = 0; i < len; i += 3)
+            {
+                const uint32_t b0 = in[i];
+                const uint32_t b1 = (i + 1 < len) ? in[i + 1] : 0u;
+                const uint32_t b2 = (i + 2 < len) ? in[i + 2] : 0u;
+                const uint32_t v  = (b0 << 16) | (b1 << 8) | b2;
+
+                out.put(kB64Table[(v >> 18) & 0x3F]);
+                out.put(kB64Table[(v >> 12) & 0x3F]);
+                out.put((i + 1 < len) ? kB64Table[(v >> 6) & 0x3F] : '=');
+                out.put((i + 2 < len) ? kB64Table[(v     ) & 0x3F] : '=');
+            }
+        };
+
+        // -------------------------------------------------------------------------
+        // XML
+        // -------------------------------------------------------------------------
+        out << "<?xml version=\"1.0\"?>\n"
+            << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" "
+            "byte_order=\"LittleEndian\" header_type=\"UInt64\">\n"
+            << "<UnstructuredGrid>\n";
+
+        // FieldData
+        out << "<FieldData>\n"
+            << "<DataArray type=\"Float32\" Name=\"TIME\" "
+            "NumberOfTuples=\"1\" format=\"ascii\">"
+            << static_cast<float>(time)
+            << "</DataArray>\n"
+            << "<DataArray type=\"Int32\" Name=\"STEP\" "
+            "NumberOfTuples=\"1\" format=\"ascii\">"
+            << static_cast<int32_t>(iStep)
+            << "</DataArray>\n"
+            << "</FieldData>\n";
 
         out << "<Piece NumberOfPoints=\"" << N << "\" NumberOfCells=\"0\">\n";
 
-        // -------------------------------------------------------------------------
         // Points
-        // -------------------------------------------------------------------------
-        out << "<Points>\n";
-        out << "<DataArray type=\"Float32\" NumberOfComponents=\"3\" "
-            "format=\"appended\" offset=\"" << off_p << "\"/>\n";
-        out << "</Points>\n";
+        out << "<Points>\n"
+            << "<DataArray type=\"Float32\" NumberOfComponents=\"3\" format=\"binary\">\n";
+        toB64(points.data(), points.size() * sizeof(float));
+        out << "\n</DataArray>\n"
+            << "</Points>\n";
 
-        // -------------------------------------------------------------------------
-        // Cells
-        // -------------------------------------------------------------------------
+        // Cells (empty)
         out << "<Cells/>\n";
 
-        // -------------------------------------------------------------------------
         // PointData
-        // -------------------------------------------------------------------------
         out << "<PointData Vectors=\"velocity\">\n";
 
         out << "<DataArray type=\"Float32\" Name=\"velocity\" "
-            "NumberOfComponents=\"3\" format=\"appended\" offset=\"" << off_v << "\"/>\n";
+            "NumberOfComponents=\"3\" format=\"binary\">\n";
+        toB64(vel.data(), vel.size() * sizeof(float));
+        out << "\n</DataArray>\n";
 
         out << "<DataArray type=\"Float32\" Name=\"angularVelocity\" "
-            "NumberOfComponents=\"3\" format=\"appended\" offset=\"" << off_w << "\"/>\n";
+            "NumberOfComponents=\"3\" format=\"binary\">\n";
+        toB64(angVel.data(), angVel.size() * sizeof(float));
+        out << "\n</DataArray>\n";
 
         out << "<DataArray type=\"Float32\" Name=\"orientation\" "
-            "NumberOfComponents=\"4\" format=\"appended\" offset=\"" << off_q << "\"/>\n";
+            "NumberOfComponents=\"4\" format=\"binary\">\n";
+        toB64(ori.data(), ori.size() * sizeof(float));
+        out << "\n</DataArray>\n";
 
-        out << "</PointData>\n";
+        out << "<DataArray type=\"Float32\" Name=\"radius\" "
+        "NumberOfComponents=\"1\" format=\"binary\">\n";
+        toB64(radius.data(), radius.size() * sizeof(float));
+        out << "\n</DataArray>\n";
 
-        out << "</Piece>\n";
-        out << "</UnstructuredGrid>\n";
+        out << "</PointData>\n"
+            << "</Piece>\n"
+            << "</UnstructuredGrid>\n"
+            << "</VTKFile>\n";
 
-        // -------------------------------------------------------------------------
-        // Appended binary data
-        // -------------------------------------------------------------------------
-        out << "<AppendedData encoding=\"raw\">\n_";
-
-        auto writeBlock = [&](const void* data, size_t nBytes)
-        {
-            uint64_t sz = (uint64_t)nBytes;
-            out.write((char*)&sz, sizeof(uint64_t));
-            out.write((char*)data, nBytes);
-        };
-
-        writeBlock(points.data(), points.size() * sizeof(float));
-        writeBlock(vel.data(),    vel.size() * sizeof(float));
-        writeBlock(angVel.data(), angVel.size() * sizeof(float));
-        writeBlock(ori.data(),    ori.size() * sizeof(float));
-
-        out << "\n</AppendedData>\n";
-        out << "</VTKFile>\n";
+        if (!out)
+            throw std::runtime_error("Write error on: " + fname.str());
     }
 
     void finalize(cudaStream_t stream)
@@ -646,6 +723,10 @@ private:
 
         // Boundary nodes
         LSBoundaryNode_.copyHostToDevice(stream);
+
+        // Hash
+        hashValue_.copyHostToDevice(stream);
+        hashIndex_.copyHostToDevice(stream);
     }
 
     void copyDeviceToHost(cudaStream_t stream)
@@ -656,6 +737,9 @@ private:
         force_.copyDeviceToHost(stream);
         torque_.copyDeviceToHost(stream);
         orientation_.copyDeviceToHost(stream);
+        
+        hashValue_.copyDeviceToHost(stream);
+        hashIndex_.copyDeviceToHost(stream);
     }
 
     HostDeviceArray1D<double3> position_;
