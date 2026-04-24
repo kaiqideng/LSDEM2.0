@@ -43,7 +43,7 @@ int main(const int argc, char** argv)
     } 
     std::vector<double3> sphereBoundaryNodeLocalPosition;
     std::vector<int3> sphereBoundaryNodeConnectivity;
-    const size_t numSegment = 5;
+    const size_t numSegment = 6;
     for (size_t i = 0; i < numSegment; i++)
     {
         for (size_t j = 0; j < numSegment; j++)
@@ -84,7 +84,7 @@ int main(const int argc, char** argv)
     1.,
     sphereBoundaryNodeConnectivity);
 
-    const double planeGridNodeSpacing = (planeMax - planeMin).x;
+    const double planeGridNodeSpacing = std::max((planeMax - planeMin).x, (planeMax - planeMin).y);
     const int3 planeGridNodeSize = make_int3(2, 2, 2);
     const double3 planeGridNodeLocalOrigin = 0.5 * (planeMin + planeMax) - 0.5 * make_double3(
         (planeGridNodeSize.x - 1) * planeGridNodeSpacing, 
