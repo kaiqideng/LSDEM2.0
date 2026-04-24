@@ -37,6 +37,12 @@
 },
 {
   "directory": "/home/kaiqideng/LSDEM2.0/build",
+  "command": "/usr/bin/c++ -I/home/kaiqideng/LSDEM2.0/FunDEM/apps -I/home/kaiqideng/LSDEM2.0/FunDEM -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction/myUtility -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel -O3 -DNDEBUG -std=gnu++17 -fPIE -o apps/CMakeFiles/test__LSSphereBouncing.dir/test/LSSphereBouncing.cpp.o -c /home/kaiqideng/LSDEM2.0/FunDEM/apps/test/LSSphereBouncing.cpp",
+  "file": "/home/kaiqideng/LSDEM2.0/FunDEM/apps/test/LSSphereBouncing.cpp",
+  "output": "apps/CMakeFiles/test__LSSphereBouncing.dir/test/LSSphereBouncing.cpp.o"
+},
+{
+  "directory": "/home/kaiqideng/LSDEM2.0/build",
   "command": "/usr/bin/c++ -I/home/kaiqideng/LSDEM2.0/FunDEM/apps -I/home/kaiqideng/LSDEM2.0/FunDEM -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel/CUDAKernelFunction/myUtility -I/home/kaiqideng/LSDEM2.0/FunDEM/kernel -O3 -DNDEBUG -std=gnu++17 -fPIE -o apps/CMakeFiles/tutorial__tutorial1-LSParticleFalling.dir/tutorial/tutorial1-LSParticleFalling.cpp.o -c /home/kaiqideng/LSDEM2.0/FunDEM/apps/tutorial/tutorial1-LSParticleFalling.cpp",
   "file": "/home/kaiqideng/LSDEM2.0/FunDEM/apps/tutorial/tutorial1-LSParticleFalling.cpp",
   "output": "apps/CMakeFiles/tutorial__tutorial1-LSParticleFalling.dir/tutorial/tutorial1-LSParticleFalling.cpp.o"
