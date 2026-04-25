@@ -175,16 +175,7 @@ sudo apt update
 sudo apt install -y paraview
 ```
 
-Or download the latest version directly from the official website for better compatibility:
-
-```bash
-# Download and extract (replace the version number as needed)
-wget https://www.paraview.org/paraview-downloads/download.php?submit=Download&version=5.13&type=binary&os=Linux&downloadFile=ParaView-5.13.3-MPI-Linux-Python3.10-x86_64.tar.gz \
-  -O paraview.tar.gz
-tar -xzf paraview.tar.gz
-cd ParaView-5.13.3-MPI-Linux-Python3.10-x86_64/bin
-./paraview
-```
+Or download the latest version directly from the official website for better compatibility
 
 ---
 
