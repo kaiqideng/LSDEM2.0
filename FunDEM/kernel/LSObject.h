@@ -7,12 +7,11 @@
 #include <fstream>
 #include <sstream>
 #include <string>
-#include <vector_types.h>
 
-class LSGridNodeInfo
+class LSInfo
 {
 public:
-    LSGridNodeInfo() = default;
+    LSInfo() = default;
     
     void buildLSGrid(const int resolutionPerParticleDiameter = 50)
     {
@@ -122,6 +121,7 @@ public:
 protected:
     void buildImplicitBoundaryNode(const int subdivisionLevel)
     {
+        if (subdivisionLevel < 1) return;
         boundaryNodePosition_.clear();
         boundaryNodeConnectivity_.clear();
 
@@ -258,7 +258,7 @@ private:
     std::vector<double> SFD_;
 };
 
-class TriangleMesh : public LSGridNodeInfo
+class TriangleMesh : public LSInfo
 {
 public:
     TriangleMesh() = default;
@@ -765,7 +765,7 @@ private:
     }
 };
 
-class Sphere : public TriangleMesh
+class Sphere : public LSInfo
 {
 public:
     Sphere() = default;
@@ -776,7 +776,7 @@ public:
         radius_ = radius;
     }
 
-    void setRadius(const double radius)
+    void setParameter(const double radius)
     {
         if (radius <= 0.0) return;
         radius_ = radius;
@@ -820,7 +820,7 @@ private:
     double radius_{0.};
 };
 
-class Superellipsoid : public TriangleMesh
+class Superellipsoid : public LSInfo
 {
 public:
     Superellipsoid() = default;
@@ -964,7 +964,7 @@ private:
             const double phi = std::pow(xy, outer) + std::pow(az, expZ) - 1.0;
 
             const double g2 = dot(grad, grad);
-            if (g2 < 1e-30) break;
+            if (g2 < eps) break;
 
             x = x - phi * grad / g2;
         }
@@ -977,4 +977,404 @@ private:
     double rz_{1.0};
     double ee_{1.0};
     double en_{1.0};
+};
+
+class Plane : public LSInfo
+{
+public:
+    Plane() = default;
+
+    Plane(const double3 outwardNormal, const double size1D)
+    {
+        if (isZero(length(outwardNormal))) return;
+        outwardNormal_ = normalize(outwardNormal);
+        size1D_ = size1D;
+    }
+
+    void setParameter(const double3 outwardNormal, const double size1D)
+    {
+        if (size1D <= 0.0) return;
+        outwardNormal_ = normalize(outwardNormal);
+        size1D_ = size1D;
+    }
+
+    void buildBoundaryNode()
+    {
+        boundaryNodePosition_.clear();
+        boundaryNodeConnectivity_.clear();
+
+        double3 tangent1, tangent2;
+        computeOrthogonalBasis(outwardNormal_, tangent1, tangent2);
+
+        double halfSize = 0.5 * size1D_;
+        double3 v0 = -halfSize * tangent1 - halfSize * tangent2;
+        double3 v1 =  halfSize * tangent1 - halfSize * tangent2;
+        double3 v2 =  halfSize * tangent1 + halfSize * tangent2;
+        double3 v3 = -halfSize * tangent1 + halfSize * tangent2;
+
+        boundaryNodePosition_ = { v0, v1, v2, v3 };
+        boundaryNodeConnectivity_ = {
+            make_int3(0, 1, 2),
+            make_int3(0, 2, 3)
+        };
+    }
+
+private:
+    bool isValid() const override
+    {
+        return !isZero(length(outwardNormal_) - 1.0) && size1D_ > 0.0;
+    }
+
+    double3 boundingBoxMin() const override
+    {
+        return 0.5 * make_double3(-size1D_, -size1D_, -size1D_);
+    }
+
+    double3 boundingBoxMax() const override
+    {
+        return 0.5 * make_double3(size1D_, size1D_, size1D_);
+    }
+
+    double evaluateSFD(const double3& p) const override
+    {
+        return dot(p, outwardNormal_);
+    }
+
+    void computeOrthogonalBasis(const double3& n, double3& t1, double3& t2) const
+    {
+        if (std::abs(n.x) > std::abs(n.z))
+            t1 = make_double3(-n.y, n.x, 0.0);
+        else
+            t1 = make_double3(0.0, -n.z, n.y);
+
+        t1 = normalize(t1);
+        t2 = cross(n, t1);
+    }
+
+    double3 outwardNormal_{0., 0., 1.};
+    double size1D_{1.0};
+};
+
+class Box : public LSInfo
+{
+public:
+    Box() = default;
+
+    Box(const double3& size3D)
+    {
+        if (size3D.x <= 0.0 || size3D.y <= 0.0 || size3D.z <= 0.0) return;
+        size3D_ = size3D;
+    }
+
+    void setParameter(const double3& size3D)
+    {
+        if (size3D.x <= 0.0 || size3D.y <= 0.0 || size3D.z <= 0.0) return;
+        size3D_ = size3D;
+    }
+
+    void buildBoundaryNode()
+    {
+        boundaryNodePosition_.clear();
+        boundaryNodeConnectivity_.clear();
+
+        const double3 half = 0.5 * size3D_;
+
+        // 8 vertices
+        boundaryNodePosition_ =
+        {
+            make_double3(-half.x, -half.y, -half.z), // 0
+            make_double3( half.x, -half.y, -half.z), // 1
+            make_double3( half.x,  half.y, -half.z), // 2
+            make_double3(-half.x,  half.y, -half.z), // 3
+
+            make_double3(-half.x, -half.y,  half.z), // 4
+            make_double3( half.x, -half.y,  half.z), // 5
+            make_double3( half.x,  half.y,  half.z), // 6
+            make_double3(-half.x,  half.y,  half.z)  // 7
+        };
+
+        // 12 triangles
+        boundaryNodeConnectivity_ =
+        {
+            // bottom
+            make_int3(0,1,2), make_int3(0,2,3),
+
+            // top
+            make_int3(4,6,5), make_int3(4,7,6),
+
+            // front
+            make_int3(0,4,5), make_int3(0,5,1),
+
+            // back
+            make_int3(3,2,6), make_int3(3,6,7),
+
+            // left
+            make_int3(0,3,7), make_int3(0,7,4),
+
+            // right
+            make_int3(1,5,6), make_int3(1,6,2)
+        };
+    }
+
+private:
+    bool isValid() const override
+    {
+        return (size3D_.x > 0.0 &&
+                size3D_.y > 0.0 &&
+                size3D_.z > 0.0);
+    }
+
+    double3 boundingBoxMin() const override
+    {
+        return -0.5 * size3D_;
+    }
+
+    double3 boundingBoxMax() const override
+    {
+        return  0.5 * size3D_;
+    }
+
+    double evaluateSFD(const double3& p) const override
+    {
+        const double3 half = 0.5 * size3D_;
+
+        double3 q = make_double3(
+            std::abs(p.x) - half.x,
+            std::abs(p.y) - half.y,
+            std::abs(p.z) - half.z
+        );
+
+        double3 qmax = make_double3(
+            std::max(q.x, 0.0),
+            std::max(q.y, 0.0),
+            std::max(q.z, 0.0)
+        );
+
+        double outside = length(qmax);
+
+        double inside = std::min(
+            std::max(q.x, std::max(q.y, q.z)),
+            0.0
+        );
+
+        return outside + inside;
+    }
+
+    double3 size3D_{1.0, 1.0, 1.0};
+};
+
+class Cylinder : public LSInfo
+{
+public:
+    Cylinder() = default;
+
+    Cylinder(const double3& bottomCenter,
+             const double3& topCenter,
+             const double radius)
+    {
+        if (radius <= 0.0) return;
+        if (isZero(length(topCenter - bottomCenter))) return;
+
+        bottomCenter_ = bottomCenter;
+        topCenter_ = topCenter;
+        radius_ = radius;
+    }
+
+    void setParameter(const double3& bottomCenter,
+                      const double3& topCenter,
+                      const double radius)
+    {
+        if (radius <= 0.0) return;
+        if (isZero(length(topCenter - bottomCenter))) return;
+
+        bottomCenter_ = bottomCenter;
+        topCenter_ = topCenter;
+        radius_ = radius;
+    }
+
+    void buildBoundaryNode(const int resolution = 32)
+    {
+        boundaryNodePosition_.clear();
+        boundaryNodeConnectivity_.clear();
+
+        double3 axis = normalize(topCenter_ - bottomCenter_);
+
+        double3 t1, t2;
+        computeOrthogonalBasis(axis, t1, t2);
+
+        // bottom / top circle
+        for (int i = 0; i < resolution; ++i)
+        {
+            double theta = 2.0 * M_PI * double(i) / double(resolution);
+            double c = std::cos(theta);
+            double s = std::sin(theta);
+
+            double3 dir = c * t1 + s * t2;
+
+            boundaryNodePosition_.push_back(bottomCenter_ + radius_ * dir); // bottom
+            boundaryNodePosition_.push_back(topCenter_ + radius_ * dir); // top
+        }
+
+        // side triangles
+        for (int i = 0; i < resolution; ++i)
+        {
+            int i0 = 2 * i;
+            int i1 = 2 * ((i + 1) % resolution);
+
+            int b0 = i0;
+            int t0 = i0 + 1;
+            int b1 = i1;
+            int t1i = i1 + 1;
+
+            boundaryNodeConnectivity_.push_back(make_int3(b0, b1, t1i));
+            boundaryNodeConnectivity_.push_back(make_int3(b0, t1i, t0));
+        }
+    }
+
+private:
+    bool isValid() const override
+    {
+        return (radius_ > 0.0 && !isZero(length(topCenter_ - bottomCenter_)));
+    }
+
+    double3 boundingBoxMin() const override
+    {
+        double3 minAB = make_double3(
+            std::min(bottomCenter_.x, topCenter_.x),
+            std::min(bottomCenter_.y, topCenter_.y),
+            std::min(bottomCenter_.z, topCenter_.z));
+
+        return minAB - make_double3(radius_, radius_, radius_);
+    }
+
+    double3 boundingBoxMax() const override
+    {
+        double3 maxAB = make_double3(
+            std::max(bottomCenter_.x, topCenter_.x),
+            std::max(bottomCenter_.y, topCenter_.y),
+            std::max(bottomCenter_.z, topCenter_.z));
+
+        return maxAB + make_double3(radius_, radius_, radius_);
+    }
+
+    double evaluateSFD(const double3& p) const override
+    {
+        const double3 ba = topCenter_ - bottomCenter_;
+        const double3 pa = p - bottomCenter_;
+
+        const double baba = dot(ba, ba);
+        const double paba = dot(pa, ba);
+
+        const double3 term = pa * baba - ba * paba;
+        const double x = length(term) - radius_ * baba;
+
+        const double y = std::abs(paba - 0.5 * baba) - 0.5 * baba;
+
+        const double x2 = x * x;
+        const double y2 = y * y * baba;
+
+        double d;
+
+        if (std::max(x, y) < 0.0)
+            d = -std::min(x2, y2);
+        else
+            d = ((x > 0.0) ? x2 : 0.0) +
+                ((y > 0.0) ? y2 : 0.0);
+
+        return std::copysign(std::sqrt(std::abs(d)) / baba, d);
+    }
+
+    void computeOrthogonalBasis(const double3& n,
+                                double3& t1,
+                                double3& t2) const
+    {
+        if (std::abs(n.x) > std::abs(n.z))
+            t1 = make_double3(-n.y, n.x, 0.0);
+        else
+            t1 = make_double3(0.0, -n.z, n.y);
+
+        t1 = normalize(t1);
+        t2 = cross(n, t1);
+    }
+
+    double3 bottomCenter_{0.0, 0.0, -0.5};
+    double3 topCenter_{0.0, 0.0,  0.5};
+    double radius_{0.5};
+};
+
+class Capsule : public LSInfo
+{
+public:
+    Capsule() = default;
+
+    Capsule(const double3& bottomCenter,
+            const double3& topCenter,
+            const double radius)
+    {
+        if (radius <= 0.0) return;
+        if (length(topCenter - bottomCenter) <= 1e-12) return;
+
+        bottomCenter_ = bottomCenter;
+        topCenter_ = topCenter;
+        radius_ = radius;
+    }
+
+    void setParameter(const double3& bottomCenter,
+                      const double3& topCenter,
+                      const double radius)
+    {
+        if (radius <= 0.0) return;
+        if (length(topCenter - bottomCenter) <= 1e-12) return;
+
+        bottomCenter_ = bottomCenter;
+        topCenter_ = topCenter;
+        radius_ = radius;
+    }
+
+    void buildBoundaryNode()
+    {
+    }
+
+private:
+    bool isValid() const override
+    {
+        return (radius_ > 0.0 &&
+                length(topCenter_ - bottomCenter_) > 1e-12);
+    }
+
+    double3 boundingBoxMin() const override
+    {
+        double3 minAB = make_double3(
+            std::min(bottomCenter_.x, topCenter_.x),
+            std::min(bottomCenter_.y, topCenter_.y),
+            std::min(bottomCenter_.z, topCenter_.z));
+
+        return minAB - make_double3(radius_, radius_, radius_);
+    }
+
+    double3 boundingBoxMax() const override
+    {
+        double3 maxAB = make_double3(
+            std::max(bottomCenter_.x, topCenter_.x),
+            std::max(bottomCenter_.y, topCenter_.y),
+            std::max(bottomCenter_.z, topCenter_.z));
+
+        return maxAB + make_double3(radius_, radius_, radius_);
+    }
+
+    double evaluateSFD(const double3& p) const override
+    {
+        const double3 pa = p - bottomCenter_;
+        const double3 ba = topCenter_ - bottomCenter_;
+
+        const double h = std::clamp(
+            dot(pa, ba) / dot(ba, ba),
+            0.0, 1.0);
+
+        return length(pa - ba * h) - radius_;
+    }
+
+    double3 bottomCenter_{0.0, 0.0, -0.5};
+    double3 topCenter_{0.0, 0.0,  0.5};
+    double radius_{0.5};
 };
